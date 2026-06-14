@@ -18,6 +18,8 @@ export interface ActiveCapture {
   stop: () => void;
 }
 
+const TARGET_SAMPLE_RATE = 16000;
+
 export async function listAudioInputs(): Promise<MediaDeviceInfo[]> {
   if (!navigator.mediaDevices?.enumerateDevices) {
     return [];
@@ -48,8 +50,16 @@ export async function startChannelCapture(options: ChannelCaptureOptions): Promi
     }
   });
 
-  const mimeType = preferredMimeType();
-  const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+  const AudioContextCtor =
+    window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioContextCtor) {
+    stopTracks(stream);
+    throw new Error("AudioContext is not available in this browser.");
+  }
+
+  const audioContext = new AudioContextCtor();
+  const source = audioContext.createMediaStreamSource(stream);
+  const processor = audioContext.createScriptProcessor(4096, 1, 1);
   const ws = new WebSocket(websocketUrl("/ws/channel"));
   let stopped = false;
 
@@ -58,6 +68,9 @@ export async function startChannelCapture(options: ChannelCaptureOptions): Promi
   ws.addEventListener("error", () => options.onError("Channel WebSocket error."));
   ws.addEventListener("close", () => {
     stopped = true;
+    processor.disconnect();
+    source.disconnect();
+    void audioContext.close();
     stopTracks(stream);
     options.onStopped();
   });
@@ -74,20 +87,22 @@ export async function startChannelCapture(options: ChannelCaptureOptions): Promi
         contextTerms: options.contextTerms || []
       })
     );
-    recorder.start(250);
   });
 
-  recorder.addEventListener("dataavailable", async (event) => {
-    if (event.data.size === 0 || ws.readyState !== WebSocket.OPEN) {
+  processor.onaudioprocess = (event) => {
+    if (stopped || ws.readyState !== WebSocket.OPEN) {
       return;
     }
 
-    ws.send(await event.data.arrayBuffer());
-  });
+    const input = event.inputBuffer.getChannelData(0);
+    const pcm = downsampleTo16BitPcm(input, audioContext.sampleRate, TARGET_SAMPLE_RATE);
+    if (pcm.byteLength > 0) {
+      ws.send(pcm);
+    }
+  };
 
-  recorder.addEventListener("error", () => {
-    options.onError("Audio recorder error.");
-  });
+  source.connect(processor);
+  processor.connect(audioContext.destination);
 
   return {
     channelId: options.channelId,
@@ -97,9 +112,9 @@ export async function startChannelCapture(options: ChannelCaptureOptions): Promi
       }
 
       stopped = true;
-      if (recorder.state !== "inactive") {
-        recorder.stop();
-      }
+      processor.disconnect();
+      source.disconnect();
+      void audioContext.close();
       stopTracks(stream);
 
       if (ws.readyState === WebSocket.OPEN) {
@@ -112,13 +127,50 @@ export async function startChannelCapture(options: ChannelCaptureOptions): Promi
   };
 }
 
-function preferredMimeType(): string | undefined {
-  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"];
-  return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate));
-}
-
 function stopTracks(stream: MediaStream): void {
   for (const track of stream.getTracks()) {
     track.stop();
   }
+}
+
+function downsampleTo16BitPcm(input: Float32Array, inputSampleRate: number, outputSampleRate: number): ArrayBuffer {
+  if (inputSampleRate === outputSampleRate) {
+    return floatTo16BitPcm(input);
+  }
+
+  if (inputSampleRate < outputSampleRate) {
+    return floatTo16BitPcm(input);
+  }
+
+  const ratio = inputSampleRate / outputSampleRate;
+  const outputLength = Math.floor(input.length / ratio);
+  const downsampled = new Float32Array(outputLength);
+
+  for (let outputIndex = 0; outputIndex < outputLength; outputIndex += 1) {
+    const start = Math.floor(outputIndex * ratio);
+    const end = Math.min(Math.floor((outputIndex + 1) * ratio), input.length);
+    let sum = 0;
+    let count = 0;
+
+    for (let inputIndex = start; inputIndex < end; inputIndex += 1) {
+      sum += input[inputIndex];
+      count += 1;
+    }
+
+    downsampled[outputIndex] = count > 0 ? sum / count : 0;
+  }
+
+  return floatTo16BitPcm(downsampled);
+}
+
+function floatTo16BitPcm(input: Float32Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(input.length * 2);
+  const view = new DataView(buffer);
+
+  for (let index = 0; index < input.length; index += 1) {
+    const sample = Math.max(-1, Math.min(1, input[index]));
+    view.setInt16(index * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+  }
+
+  return buffer;
 }

@@ -14,6 +14,7 @@
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "lucide-react": "^0.468.0",
+    "microsoft-cognitiveservices-speech-sdk": "^1.50.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "ws": "^8.18.3"
@@ -30,5 +31,8 @@
     "typescript": "^5.9.2",
     "vite": "^8.0.16",
     "vitest": "^4.1.8"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   }
 }

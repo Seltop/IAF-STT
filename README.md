@@ -1,6 +1,6 @@
 # Hebrew STT Monitor
 
-Prototype web app for multi-channel Hebrew live speech-to-text monitoring with exact phrase triggers. The app keeps the Soniox API key on the backend and streams browser audio through local WebSockets.
+Prototype web app for multi-channel Hebrew live speech-to-text monitoring with exact phrase triggers. The app keeps speech-provider keys on the backend and streams browser microphone audio through local WebSockets.
 
 ## Setup
 
@@ -10,15 +10,28 @@ Prototype web app for multi-channel Hebrew live speech-to-text monitoring with e
    npm.cmd install
    ```
 
-2. Copy `.env.example` to `.env` and set `SONIOX_API_KEY`.
+2. Copy `.env.example` to `.env`.
 
-3. Start the app:
+3. For free Hebrew testing, create an Azure AI Speech resource on the Free F0 tier and set:
+
+   ```env
+   STT_PROVIDER=azure
+   AZURE_SPEECH_KEY=your-key
+   AZURE_SPEECH_REGION=your-region
+   ```
+
+4. Start the app:
 
    ```powershell
    npm.cmd run dev
    ```
 
-4. Open `http://127.0.0.1:5173`.
+5. Open `http://127.0.0.1:5173`.
+
+## Providers
+
+- `azure`: default. Uses Azure Speech with Hebrew locale `he-IL`. Azure Free F0 includes limited monthly speech-to-text capacity.
+- `soniox`: optional. Set `STT_PROVIDER=soniox` and `SONIOX_API_KEY`.
 
 ## Notes
 

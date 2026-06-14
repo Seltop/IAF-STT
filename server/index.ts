@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import { config } from "./config.js";
-import { SonioxProvider } from "./providers/sonioxProvider.js";
+import { createProvider } from "./providers/providerFactory.js";
 import { SessionStore } from "./sessionStore.js";
 import type { Channel, MonitorClientMessage, ServerMessage, TriggerRule } from "../shared/types.js";
 
@@ -11,11 +11,14 @@ const app = express();
 const server = createServer(app);
 const monitorWss = new WebSocketServer({ noServer: true });
 const channelWss = new WebSocketServer({ noServer: true });
-const store = new SessionStore(Boolean(config.sonioxApiKey), config.maxChannels);
-const provider = new SonioxProvider({
-  apiKey: config.sonioxApiKey,
-  wsUrl: config.sonioxWsUrl
-});
+const providerSelection = createProvider(config);
+const store = new SessionStore(
+  providerSelection.providerName,
+  providerSelection.configured,
+  providerSelection.message,
+  config.maxChannels
+);
+const provider = providerSelection.provider;
 
 const monitorClients = new Map<string, Set<WebSocket>>();
 const channelConnections = new Map<WebSocket, { sessionId: string; channelId: string; providerConnectionId: string }>();
@@ -295,6 +298,8 @@ function parseJson<T>(raw: string): T | undefined {
 }
 
 server.listen(config.port, () => {
-  const keyStatus = config.sonioxApiKey ? "configured" : "missing";
-  console.log(`STT backend listening on http://127.0.0.1:${config.port} (Soniox key: ${keyStatus})`);
+  const keyStatus = providerSelection.configured ? "configured" : "missing";
+  console.log(
+    `STT backend listening on http://127.0.0.1:${config.port} (${providerSelection.providerName}: ${keyStatus})`
+  );
 });

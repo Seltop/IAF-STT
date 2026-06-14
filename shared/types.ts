@@ -75,7 +75,9 @@ export interface SessionState {
   transcriptSegments: TranscriptSegment[];
   triggerRules: TriggerRule[];
   triggerEvents: TriggerEvent[];
+  providerName: string;
   providerConfigured: boolean;
+  providerMessage?: string;
   maxChannels: number;
 }
 

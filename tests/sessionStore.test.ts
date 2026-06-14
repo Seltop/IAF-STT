@@ -3,7 +3,7 @@ import { SessionStore } from "../server/sessionStore.js";
 
 describe("SessionStore", () => {
   it("creates trigger events when final phrase is split across provider chunks", () => {
-    const store = new SessionStore(true, 4);
+    const store = new SessionStore("test", true, undefined, 4);
     const state = store.createSession();
     store.upsertChannel(state.id, {
       id: "channel-1",

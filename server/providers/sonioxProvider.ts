@@ -47,7 +47,9 @@ export class SonioxProvider implements RealtimeProvider {
         JSON.stringify({
           api_key: this.config.apiKey,
           model: "stt-rt-v4",
-          audio_format: "auto",
+          audio_format: "pcm_s16le",
+          sample_rate: 16000,
+          num_channels: 1,
           language_hints: ["he"],
           enable_language_identification: true,
           enable_speaker_diarization: true,

@@ -279,6 +279,7 @@ export function App() {
           </div>
           <div className="meta-row">
             <StatusPill active={monitorConnected} label={monitorConnected ? "מחובר" : "מנותק"} />
+            <span>{session.providerName}</span>
             <span>{session.channels.length}/{session.maxChannels} ערוצים</span>
             <span>{session.id.slice(0, 8)}</span>
           </div>
@@ -298,7 +299,7 @@ export function App() {
       {!session.providerConfigured && (
         <section className="alert-strip">
           <AlertTriangle size={18} />
-          <span>SONIOX_API_KEY חסר בשרת. התצוגה תעבוד, אך תמלול חי לא יתחיל עד להגדרת המפתח.</span>
+          <span>{session.providerMessage || "חסרים פרטי התחברות לספק התמלול. התצוגה תעבוד, אך תמלול חי לא יתחיל."}</span>
         </section>
       )}
 

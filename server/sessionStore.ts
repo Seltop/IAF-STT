@@ -23,7 +23,12 @@ interface SessionInternal {
 export class SessionStore {
   private readonly sessions = new Map<string, SessionInternal>();
 
-  constructor(private readonly providerConfigured: boolean, private readonly maxChannels: number) {}
+  constructor(
+    private readonly providerName: string,
+    private readonly providerConfigured: boolean,
+    private readonly providerMessage: string | undefined,
+    private readonly maxChannels: number
+  ) {}
 
   createSession(): SessionState {
     const id = crypto.randomUUID();
@@ -34,7 +39,9 @@ export class SessionStore {
       transcriptSegments: [],
       triggerRules: DEFAULT_TRIGGER_RULES.map((rule) => ({ ...rule })),
       triggerEvents: [],
+      providerName: this.providerName,
       providerConfigured: this.providerConfigured,
+      providerMessage: this.providerMessage,
       maxChannels: this.maxChannels
     };
 
