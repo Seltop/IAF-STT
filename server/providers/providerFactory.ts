@@ -15,6 +15,7 @@ export function createProvider(config: AppConfig): ProviderSelection {
     return {
       provider: new SonioxProvider({
         apiKey: config.sonioxApiKey,
+        model: config.sonioxModel,
         wsUrl: config.sonioxWsUrl
       }),
       providerName: "Soniox",

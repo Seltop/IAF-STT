@@ -7,6 +7,7 @@ export interface AppConfig {
   azureSpeechKey?: string;
   azureSpeechRegion?: string;
   sonioxApiKey?: string;
+  sonioxModel: string;
   sonioxWsUrl: string;
 }
 
@@ -27,14 +28,15 @@ export const config: AppConfig = {
   azureSpeechKey: process.env.AZURE_SPEECH_KEY,
   azureSpeechRegion: process.env.AZURE_SPEECH_REGION,
   sonioxApiKey: process.env.SONIOX_API_KEY,
+  sonioxModel: process.env.SONIOX_MODEL || "stt-rt-v5",
   sonioxWsUrl: process.env.SONIOX_WS_URL || "wss://stt-rt.soniox.com/transcribe-websocket"
 };
 
 function readProviderName(): AppConfig["sttProvider"] {
   const value = process.env.STT_PROVIDER?.toLowerCase();
-  if (value === "soniox") {
-    return "soniox";
+  if (value === "azure") {
+    return "azure";
   }
 
-  return "azure";
+  return "soniox";
 }

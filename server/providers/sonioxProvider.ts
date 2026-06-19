@@ -4,6 +4,7 @@ import { parseSonioxMessage } from "./sonioxParser.js";
 
 interface SonioxProviderConfig {
   apiKey?: string;
+  model: string;
   wsUrl: string;
 }
 
@@ -46,7 +47,7 @@ export class SonioxProvider implements RealtimeProvider {
       ws.send(
         JSON.stringify({
           api_key: this.config.apiKey,
-          model: "stt-rt-v4",
+          model: this.config.model,
           audio_format: "pcm_s16le",
           sample_rate: 16000,
           num_channels: 1,
