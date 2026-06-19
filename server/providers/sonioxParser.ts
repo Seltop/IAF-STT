@@ -50,7 +50,7 @@ export function parseSonioxMessage(raw: string): { result?: ProviderResult; erro
     message.tokens
       ?.filter((token) => token.translation_status !== "translation")
       .map((token) => ({
-        text: token.text || "",
+        text: sanitizeTokenText(token.text),
         isFinal: Boolean(token.is_final),
         startMs: token.start_ms,
         endMs: token.end_ms,
@@ -72,4 +72,8 @@ export function parseSonioxMessage(raw: string): { result?: ProviderResult; erro
 
 export function renderTokens(tokens: { text: string }[]): string {
   return tokens.map((token) => token.text).join("");
+}
+
+function sanitizeTokenText(text = ""): string {
+  return text.replaceAll("<end>", "");
 }

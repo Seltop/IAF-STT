@@ -46,6 +46,19 @@ describe("Soniox parser", () => {
     expect(renderTokens(parsed.result?.tokens || [])).toBe("שלום");
   });
 
+  it("removes Soniox end markers from transcript tokens", () => {
+    const parsed = parseSonioxMessage(
+      JSON.stringify({
+        tokens: [
+          { text: "חירום.<end>", is_final: true },
+          { text: "<end>", is_final: true }
+        ]
+      })
+    );
+
+    expect(renderTokens(parsed.result?.tokens || [])).toBe("חירום.");
+  });
+
   it("returns provider errors", () => {
     const parsed = parseSonioxMessage(
       JSON.stringify({

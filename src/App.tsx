@@ -1,7 +1,6 @@
 import {
   Activity,
   AlertTriangle,
-  Check,
   Download,
   Mic,
   Plus,
@@ -10,7 +9,7 @@ import {
   Square,
   Trash2
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_CHANNEL_COLORS } from "../shared/defaults.js";
 import { normalizeHebrew } from "../shared/hebrew.js";
 import type { Channel, ServerMessage, SessionState, Severity, TriggerRule } from "../shared/types.js";
@@ -23,24 +22,20 @@ import {
 } from "./lib/audioCapture";
 import { websocketUrl } from "./lib/ws";
 
-const severityLabels: Record<Severity, string> = {
-  low: "נמוך",
-  medium: "בינוני",
-  high: "גבוה"
-};
-
 const severityColors: Record<Severity, string> = {
   low: "#0ea5e9",
   medium: "#f59e0b",
   high: "#ef4444"
 };
 
+const CHAT_GROUP_GAP_MS = 15_000;
+
 export function App() {
   const [session, setSession] = useState<SessionState | null>(null);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
   const [channelName, setChannelName] = useState("ערוץ 1");
-  const [contextText, setContextText] = useState("כטבם, חמ״ל, מפקד משימה, צוות קרקע");
+  const [contextText, setContextText] = useState("כטבם, חמ״ל, מפקד משימה, צוות קרקע, יירוט צפוני");
   const [newRulePhrase, setNewRulePhrase] = useState("");
   const [newRuleSeverity, setNewRuleSeverity] = useState<Severity>("medium");
   const [toast, setToast] = useState<string | null>(null);
@@ -120,20 +115,12 @@ export function App() {
     };
   }, [session?.id]);
 
-  const finalSegments = useMemo(
-    () => session?.transcriptSegments.filter((segment) => segment.isFinal).slice(-120) || [],
-    [session]
-  );
+  const finalSegments = useMemo(() => {
+    const segments = session?.transcriptSegments.filter((segment) => segment.isFinal).slice(-120) || [];
+    return groupFinalSegments(segments);
+  }, [session]);
   const provisionalSegments = useMemo(
     () => session?.transcriptSegments.filter((segment) => !segment.isFinal) || [],
-    [session]
-  );
-  const openTriggerEvents = useMemo(
-    () => session?.triggerEvents.filter((event) => !event.acknowledgedAt).slice().reverse() || [],
-    [session]
-  );
-  const acknowledgedEvents = useMemo(
-    () => session?.triggerEvents.filter((event) => event.acknowledgedAt).slice(-20).reverse() || [],
     [session]
   );
   const canAddChannel = Boolean(session && session.channels.length < session.maxChannels);
@@ -244,20 +231,6 @@ export function App() {
     }
 
     sendRules(session.triggerRules.filter((rule) => rule.id !== ruleId));
-  }
-
-  function acknowledge(eventId: string) {
-    if (!session || monitorWsRef.current?.readyState !== WebSocket.OPEN) {
-      return;
-    }
-
-    monitorWsRef.current.send(
-      JSON.stringify({
-        type: "ack_trigger",
-        sessionId: session.id,
-        triggerEventId: eventId
-      })
-    );
   }
 
   if (!session) {
@@ -420,7 +393,7 @@ export function App() {
         <section className="transcript-panel">
           <div className="section-heading">
             <Activity size={18} />
-            <h2>תמלול</h2>
+            <h2>צ'אט</h2>
           </div>
 
           <div className="transcript-stream">
@@ -448,43 +421,6 @@ export function App() {
           </div>
         </section>
 
-        <aside className="event-panel">
-          <div className="section-heading">
-            <AlertTriangle size={18} />
-            <h2>אירועים</h2>
-          </div>
-
-          <div className="event-list">
-            {openTriggerEvents.length === 0 && <div className="empty-state">אין אירועים פתוחים</div>}
-            {openTriggerEvents.map((event) => (
-              <article className={`event-item severity-${event.severity}`} key={event.id}>
-                <div className="event-top">
-                  <span style={{ backgroundColor: event.color }}>{severityLabels[event.severity]}</span>
-                  <time>{formatTime(event.createdAt)}</time>
-                </div>
-                <strong>{event.phrase}</strong>
-                <p>{event.transcriptText}</p>
-                <button className="icon-button" onClick={() => acknowledge(event.id)} title="אישור אירוע">
-                  <Check size={17} />
-                  אישור
-                </button>
-              </article>
-            ))}
-          </div>
-
-          <div className="section-heading compact-heading">
-            <Check size={16} />
-            <h2>טופלו</h2>
-          </div>
-          <div className="ack-list">
-            {acknowledgedEvents.map((event) => (
-              <div className="ack-item" key={event.id}>
-                <span>{event.phrase}</span>
-                <time>{formatTime(event.acknowledgedAt || event.createdAt)}</time>
-              </div>
-            ))}
-          </div>
-        </aside>
       </section>
 
       {toast && (
@@ -495,6 +431,69 @@ export function App() {
       )}
     </main>
   );
+}
+
+type TranscriptSegment = SessionState["transcriptSegments"][number];
+
+function groupFinalSegments(segments: TranscriptSegment[]): TranscriptSegment[] {
+  const groups: TranscriptSegment[] = [];
+
+  for (const segment of segments) {
+    const previous = groups[groups.length - 1];
+    if (!previous || !shouldMergeSegments(previous, segment)) {
+      groups.push({
+        ...segment,
+        matchedRuleIds: [...segment.matchedRuleIds],
+        tokens: [...segment.tokens]
+      });
+      continue;
+    }
+
+    previous.id = `${previous.id}:${segment.id}`;
+    previous.text = joinTranscriptText(previous.text, segment.text);
+    previous.tokens = [...previous.tokens, ...segment.tokens];
+    previous.endedAtMs = segment.endedAtMs ?? previous.endedAtMs;
+    previous.finalAudioMs = segment.finalAudioMs ?? previous.finalAudioMs;
+    previous.totalAudioMs = segment.totalAudioMs ?? previous.totalAudioMs;
+    previous.createdAt = segment.createdAt;
+    previous.confidence = averageConfidence(previous.confidence, segment.confidence);
+    previous.matchedRuleIds = [...new Set([...previous.matchedRuleIds, ...segment.matchedRuleIds])];
+  }
+
+  return groups;
+}
+
+function shouldMergeSegments(previous: TranscriptSegment, current: TranscriptSegment): boolean {
+  if (previous.channelId !== current.channelId) {
+    return false;
+  }
+
+  if (previous.speaker && current.speaker && previous.speaker !== current.speaker) {
+    return false;
+  }
+
+  const previousTime = new Date(previous.createdAt).getTime();
+  const currentTime = new Date(current.createdAt).getTime();
+  return Number.isFinite(previousTime) && Number.isFinite(currentTime) && currentTime - previousTime <= CHAT_GROUP_GAP_MS;
+}
+
+function joinTranscriptText(previous: string, current: string): string {
+  const left = previous.trimEnd();
+  const right = current.trimStart();
+  if (!left) {
+    return right;
+  }
+  if (!right) {
+    return left;
+  }
+  return `${left}\n${right}`;
+}
+
+function averageConfidence(previous?: number, current?: number): number | undefined {
+  if (typeof previous === "number" && typeof current === "number") {
+    return (previous + current) / 2;
+  }
+  return previous ?? current;
 }
 
 function ChannelRow({ channel, active, onStop }: { channel: Channel; active: boolean; onStop: () => void }) {
@@ -526,7 +525,7 @@ function TranscriptLine({
   channel?: Channel;
   rules: TriggerRule[];
 }) {
-  const matchedRules = rules.filter((rule) => segment.matchedRuleIds.includes(rule.id));
+  const highlightedText = renderHighlightedTranscript(segment.text, rules);
 
   return (
     <article className={`transcript-line ${segment.isFinal ? "" : "provisional"}`}>
@@ -538,18 +537,87 @@ function TranscriptLine({
         {typeof segment.confidence === "number" && <span>{Math.round(segment.confidence * 100)}%</span>}
         {segment.speaker && <span>{segment.speaker}</span>}
       </div>
-      <p>{segment.text}</p>
-      {matchedRules.length > 0 && (
-        <div className="match-row">
-          {matchedRules.map((rule) => (
-            <span key={rule.id} style={{ backgroundColor: rule.color }}>
-              {rule.phrase}
-            </span>
-          ))}
-        </div>
-      )}
+      <p>{highlightedText}</p>
     </article>
   );
+}
+
+function renderHighlightedTranscript(text: string, rules: TriggerRule[]): ReactNode[] {
+  const matches = findTriggerMatches(text, rules);
+  if (matches.length === 0) {
+    return [text];
+  }
+
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+
+  for (const match of matches) {
+    if (match.start > cursor) {
+      nodes.push(text.slice(cursor, match.start));
+    }
+
+    nodes.push(
+      <mark className="trigger-highlight" key={`${match.start}-${match.end}-${match.rule.id}`} title={match.rule.phrase}>
+        {text.slice(match.start, match.end)}
+      </mark>
+    );
+    cursor = match.end;
+  }
+
+  if (cursor < text.length) {
+    nodes.push(text.slice(cursor));
+  }
+
+  return nodes;
+}
+
+function findTriggerMatches(text: string, rules: TriggerRule[]): Array<{ start: number; end: number; rule: TriggerRule }> {
+  const matches: Array<{ start: number; end: number; rule: TriggerRule }> = [];
+
+  for (const rule of rules) {
+    const pattern = triggerPattern(rule.phrase);
+    if (!rule.enabled || !pattern) {
+      continue;
+    }
+
+    for (const match of text.matchAll(pattern)) {
+      const prefix = match[1] || "";
+      const value = match[2] || "";
+      if (!value) {
+        continue;
+      }
+
+      const start = match.index + prefix.length;
+      matches.push({
+        start,
+        end: start + value.length,
+        rule
+      });
+    }
+  }
+
+  return matches
+    .sort((a, b) => a.start - b.start || b.end - b.start - (a.end - a.start))
+    .filter((match, index, sorted) => {
+      const previous = sorted
+        .slice(0, index)
+        .find((item) => item.start < match.end && match.start < item.end);
+      return !previous;
+    });
+}
+
+function triggerPattern(phrase: string): RegExp | undefined {
+  const words = phrase.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) {
+    return undefined;
+  }
+
+  const source = words.map(escapeRegExp).join("\\s+");
+  return new RegExp(`(^|[^\\p{L}\\p{N}])(${source})(?=$|[^\\p{L}\\p{N}])`, "giu");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function StatusPill({ active, label }: { active: boolean; label: string }) {
