@@ -18,6 +18,7 @@ Prototype web app for multi-channel Hebrew live speech-to-text monitoring with e
    STT_PROVIDER=soniox
    SONIOX_API_KEY=your-key
    SONIOX_MODEL=stt-rt-v5
+   SONIOX_MAX_ENDPOINT_DELAY_MS=2000
    ```
 
 4. Start the app:
@@ -32,6 +33,8 @@ Prototype web app for multi-channel Hebrew live speech-to-text monitoring with e
 
 - `soniox`: default. Uses Soniox real-time model `stt-rt-v5` with Hebrew language hints, language identification, speaker diarization, endpoint detection, and custom context terms.
 - `azure`: optional baseline. Set `STT_PROVIDER=azure`, `AZURE_SPEECH_KEY`, and `AZURE_SPEECH_REGION`. Uses Azure Speech with Hebrew locale `he-IL`.
+
+`SONIOX_MAX_ENDPOINT_DELAY_MS` controls how long Soniox waits before finalizing a speech segment. Higher values usually split lines less but add a little latency.
 
 ## Cost
 

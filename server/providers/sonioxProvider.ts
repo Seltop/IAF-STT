@@ -4,6 +4,7 @@ import { parseSonioxMessage } from "./sonioxParser.js";
 
 interface SonioxProviderConfig {
   apiKey?: string;
+  maxEndpointDelayMs: number;
   model: string;
   wsUrl: string;
 }
@@ -55,7 +56,7 @@ export class SonioxProvider implements RealtimeProvider {
           enable_language_identification: true,
           enable_speaker_diarization: true,
           enable_endpoint_detection: true,
-          max_endpoint_delay_ms: 1000,
+          max_endpoint_delay_ms: this.config.maxEndpointDelayMs,
           client_reference_id: `${options.channelName}-${options.channelId}`.slice(0, 256),
           context: {
             general: [

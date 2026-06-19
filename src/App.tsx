@@ -28,7 +28,7 @@ const severityColors: Record<Severity, string> = {
   high: "#ef4444"
 };
 
-const CHAT_GROUP_GAP_MS = 15_000;
+const CHAT_GROUP_GAP_MS = 25_000;
 
 export function App() {
   const [session, setSession] = useState<SessionState | null>(null);
@@ -545,7 +545,7 @@ function joinTranscriptText(previous: string, current: string): string {
   if (!right) {
     return left;
   }
-  return `${left}\n${right}`;
+  return startsWithClosingPunctuation(right) ? `${left}${right}` : `${left} ${right}`;
 }
 
 function averageConfidence(previous?: number, current?: number): number | undefined {
@@ -553,6 +553,10 @@ function averageConfidence(previous?: number, current?: number): number | undefi
     return (previous + current) / 2;
   }
   return previous ?? current;
+}
+
+function startsWithClosingPunctuation(value: string): boolean {
+  return /^[,.;:!?…،؟]/u.test(value);
 }
 
 function parseContextTerms(value: string): string[] {

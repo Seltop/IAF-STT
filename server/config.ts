@@ -7,6 +7,7 @@ export interface AppConfig {
   azureSpeechKey?: string;
   azureSpeechRegion?: string;
   sonioxApiKey?: string;
+  sonioxMaxEndpointDelayMs: number;
   sonioxModel: string;
   sonioxWsUrl: string;
 }
@@ -28,6 +29,7 @@ export const config: AppConfig = {
   azureSpeechKey: process.env.AZURE_SPEECH_KEY,
   azureSpeechRegion: process.env.AZURE_SPEECH_REGION,
   sonioxApiKey: process.env.SONIOX_API_KEY,
+  sonioxMaxEndpointDelayMs: readNumber("SONIOX_MAX_ENDPOINT_DELAY_MS", 2000),
   sonioxModel: process.env.SONIOX_MODEL || "stt-rt-v5",
   sonioxWsUrl: process.env.SONIOX_WS_URL || "wss://stt-rt.soniox.com/transcribe-websocket"
 };
