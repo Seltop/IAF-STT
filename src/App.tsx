@@ -29,6 +29,13 @@ const severityColors: Record<Severity, string> = {
 };
 
 const CHAT_GROUP_GAP_MS = 25_000;
+const SETTINGS_STORAGE_KEY = "hebrew-stt-monitor-settings-v1";
+
+interface PersistedSettings {
+  contextTerms?: string[];
+  contextText?: string;
+  triggerRules?: TriggerRule[];
+}
 
 export function App() {
   const [session, setSession] = useState<SessionState | null>(null);
@@ -42,6 +49,7 @@ export function App() {
   const [monitorConnected, setMonitorConnected] = useState(false);
   const monitorWsRef = useRef<WebSocket | null>(null);
   const capturesRef = useRef(new Map<string, ActiveCapture>());
+  const pendingSettingsRestoreRef = useRef<{ sessionId: string; settings: PersistedSettings } | null>(null);
   const syncedContextSessionIdRef = useRef<string | null>(null);
 
   const refreshDevices = useCallback(async () => {
@@ -77,8 +85,17 @@ export function App() {
           return;
         }
 
-        setSession(initialSession);
-        window.history.replaceState(null, "", `?session=${initialSession.id}`);
+        const persistedSettings = readPersistedSettings();
+        const restoredSession = applyPersistedSettings(initialSession, persistedSettings);
+        setSession(restoredSession);
+        setContextText(formatContextTerms(restoredSession.contextTerms?.length ? restoredSession.contextTerms : DEFAULT_CONTEXT_TERMS));
+        pendingSettingsRestoreRef.current = hasPersistedSettings(persistedSettings)
+          ? {
+              sessionId: restoredSession.id,
+              settings: persistedSettings
+            }
+          : null;
+        window.history.replaceState(null, "", `?session=${restoredSession.id}`);
         await refreshDevices();
       } catch (error) {
         setToast(error instanceof Error ? error.message : "טעינת המערכת נכשלה");
@@ -105,6 +122,7 @@ export function App() {
 
     ws.addEventListener("open", () => {
       setMonitorConnected(true);
+      restoreSettingsBeforeJoin(ws, session.id);
       ws.send(JSON.stringify({ type: "join_session", sessionId: session.id }));
     });
 
@@ -213,6 +231,11 @@ export function App() {
 
   function applyTriggerRules(rules: TriggerRule[]) {
     setSession((current) => (current ? { ...current, triggerRules: rules } : current));
+    persistSettings({
+      contextTerms: parseContextTerms(contextText),
+      contextText,
+      triggerRules: rules
+    });
     sendRules(rules);
   }
 
@@ -234,7 +257,42 @@ export function App() {
     const terms = parseContextTerms(value);
     setContextText(value);
     setSession((current) => (current ? { ...current, contextTerms: terms } : current));
+    persistSettings({
+      contextTerms: terms,
+      contextText: value,
+      triggerRules: session?.triggerRules
+    });
     sendContextTerms(terms);
+  }
+
+  function restoreSettingsBeforeJoin(ws: WebSocket, sessionId: string) {
+    const pending = pendingSettingsRestoreRef.current;
+    if (!pending || pending.sessionId !== sessionId) {
+      return;
+    }
+
+    const terms = pending.settings.contextTerms || parseContextTerms(pending.settings.contextText || "");
+    if (terms.length > 0) {
+      ws.send(
+        JSON.stringify({
+          type: "update_context_terms",
+          sessionId,
+          terms
+        })
+      );
+    }
+
+    if (pending.settings.triggerRules?.length) {
+      ws.send(
+        JSON.stringify({
+          type: "update_trigger_rules",
+          sessionId,
+          rules: pending.settings.triggerRules
+        })
+      );
+    }
+
+    pendingSettingsRestoreRef.current = null;
   }
 
   function updateRule(ruleId: string, patch: Partial<TriggerRule>) {
@@ -557,6 +615,71 @@ function averageConfidence(previous?: number, current?: number): number | undefi
 
 function startsWithClosingPunctuation(value: string): boolean {
   return /^[,.;:!?…،؟]/u.test(value);
+}
+
+function applyPersistedSettings(session: SessionState, settings: PersistedSettings): SessionState {
+  const contextTerms = settings.contextTerms?.length
+    ? settings.contextTerms
+    : settings.contextText
+      ? parseContextTerms(settings.contextText)
+      : session.contextTerms;
+
+  return {
+    ...session,
+    contextTerms,
+    triggerRules: settings.triggerRules?.length ? settings.triggerRules : session.triggerRules
+  };
+}
+
+function readPersistedSettings(): PersistedSettings {
+  try {
+    const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+
+    const parsed = JSON.parse(raw) as Partial<PersistedSettings>;
+    return {
+      contextTerms: Array.isArray(parsed.contextTerms) ? parsed.contextTerms.map(String).filter(Boolean) : undefined,
+      contextText: typeof parsed.contextText === "string" ? parsed.contextText : undefined,
+      triggerRules: Array.isArray(parsed.triggerRules) ? parsed.triggerRules.filter(isTriggerRule) : undefined
+    };
+  } catch {
+    return {};
+  }
+}
+
+function persistSettings(settings: PersistedSettings): void {
+  try {
+    const current = readPersistedSettings();
+    const next: PersistedSettings = {
+      ...current,
+      ...settings
+    };
+    window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // localStorage may be unavailable in hardened browser settings.
+  }
+}
+
+function hasPersistedSettings(settings: PersistedSettings): boolean {
+  return Boolean(settings.contextTerms?.length || settings.contextText?.trim() || settings.triggerRules?.length);
+}
+
+function isTriggerRule(value: unknown): value is TriggerRule {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const rule = value as Partial<TriggerRule>;
+  return (
+    typeof rule.id === "string" &&
+    typeof rule.phrase === "string" &&
+    (rule.severity === "low" || rule.severity === "medium" || rule.severity === "high") &&
+    typeof rule.color === "string" &&
+    typeof rule.enabled === "boolean" &&
+    typeof rule.cooldownSeconds === "number"
+  );
 }
 
 function parseContextTerms(value: string): string[] {
