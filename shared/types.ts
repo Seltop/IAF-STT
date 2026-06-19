@@ -116,6 +116,10 @@ export type MonitorClientMessage =
       channelId: string;
     }
   | {
+      type: "clear_chat";
+      sessionId: string;
+    }
+  | {
       type: "update_trigger_rules";
       sessionId: string;
       rules: TriggerRule[];

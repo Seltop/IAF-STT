@@ -72,4 +72,52 @@ describe("SessionStore", () => {
     expect(updated.triggerRules[0].phrase).toBe("");
     expect(updated.triggerRules[0].normalizedPhrase).toBe("");
   });
+
+  it("matches final trigger phrases after Hebrew prefixes", () => {
+    const store = new SessionStore("test", true, undefined, 4);
+    const state = store.createSession();
+    store.upsertChannel(state.id, {
+      id: "channel-1",
+      name: "ערוץ בדיקה",
+      color: "#2563eb"
+    });
+    store.updateTriggerRules(state.id, [
+      {
+        id: "rule-switch",
+        phrase: "מתג",
+        normalizedPhrase: "מתג",
+        severity: "high",
+        color: "#ef4444",
+        enabled: true,
+        cooldownSeconds: 8
+      }
+    ]);
+
+    const update = store.applyProviderResult(state.id, "channel-1", {
+      tokens: [{ text: "קבלו התראה במתג 30", isFinal: true }]
+    });
+
+    expect(update.segments[0].matchedRuleIds).toEqual(["rule-switch"]);
+    expect(update.triggerEvents).toHaveLength(1);
+  });
+
+  it("clears chat history without deleting channels or trigger rules", () => {
+    const store = new SessionStore("test", true, undefined, 4);
+    const state = store.createSession();
+    store.upsertChannel(state.id, {
+      id: "channel-1",
+      name: "ערוץ בדיקה",
+      color: "#2563eb"
+    });
+    store.applyProviderResult(state.id, "channel-1", {
+      tokens: [{ text: "חירום", isFinal: true }]
+    });
+
+    const updated = store.clearChat(state.id);
+
+    expect(updated.channels).toHaveLength(1);
+    expect(updated.triggerRules).toHaveLength(state.triggerRules.length);
+    expect(updated.transcriptSegments).toHaveLength(0);
+    expect(updated.triggerEvents).toHaveLength(0);
+  });
 });

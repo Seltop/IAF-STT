@@ -118,6 +118,12 @@ monitorWss.on("connection", (ws) => {
         return;
       }
 
+      if (message.type === "clear_chat") {
+        const state = store.clearChat(message.sessionId);
+        broadcastState(message.sessionId, state);
+        return;
+      }
+
       if (message.type === "update_trigger_rules") {
         const state = store.updateTriggerRules(message.sessionId, message.rules as TriggerRule[]);
         broadcastState(message.sessionId, state);

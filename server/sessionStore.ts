@@ -1,5 +1,5 @@
 import { DEFAULT_CONTEXT_TERMS, DEFAULT_TRIGGER_RULES } from "../shared/defaults.js";
-import { normalizeHebrew } from "../shared/hebrew.js";
+import { findLastNormalizedPhraseIndex, normalizeHebrew } from "../shared/hebrew.js";
 import { hydrateTriggerRule, matchTriggerRules } from "../shared/triggers.js";
 import type {
   Channel,
@@ -112,6 +112,16 @@ export class SessionStore {
     return this.cloneState(session.state);
   }
 
+  clearChat(sessionId: string): SessionState {
+    const session = this.requireSession(sessionId);
+    session.state.transcriptSegments = [];
+    session.state.triggerEvents = [];
+    session.channelFinalText.clear();
+    session.lastRuleOffsets.clear();
+    session.lastRuleTriggerAt.clear();
+    return this.cloneState(session.state);
+  }
+
   updateTriggerRules(sessionId: string, rules: TriggerRule[]): SessionState {
     const session = this.requireSession(sessionId);
     session.state.triggerRules = rules.map((rule) => hydrateTriggerRule(rule));
@@ -218,7 +228,6 @@ export class SessionStore {
     segment: TranscriptSegment,
     triggerEvents: TriggerEvent[]
   ): string[] {
-    const normalizedText = normalizeHebrew(rollingText);
     const now = Date.now();
     const matchedRuleIds: string[] = [];
 
@@ -227,7 +236,7 @@ export class SessionStore {
         continue;
       }
 
-      const offset = normalizedText.lastIndexOf(rule.normalizedPhrase);
+      const offset = findLastNormalizedPhraseIndex(rollingText, rule.normalizedPhrase);
       const offsetKey = `${channelId}:${rule.id}`;
       if (offset === -1 || offset <= (session.lastRuleOffsets.get(offsetKey) ?? -1)) {
         continue;

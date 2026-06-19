@@ -29,6 +29,7 @@ const severityColors: Record<Severity, string> = {
 };
 
 const CHAT_GROUP_GAP_MS = 25_000;
+const HEBREW_TRIGGER_PREFIXES = "ובכלמהש";
 const SETTINGS_STORAGE_KEY = "hebrew-stt-monitor-settings-v1";
 
 interface PersistedSettings {
@@ -211,6 +212,33 @@ export function App() {
         type: "delete_channel",
         sessionId: session.id,
         channelId
+      })
+    );
+  }
+
+  function clearChat() {
+    if (!session || monitorWsRef.current?.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const hasHistory = session.transcriptSegments.length > 0 || session.triggerEvents.length > 0;
+    if (!hasHistory) {
+      return;
+    }
+
+    setSession((current) =>
+      current
+        ? {
+            ...current,
+            transcriptSegments: [],
+            triggerEvents: []
+          }
+        : current
+    );
+    monitorWsRef.current.send(
+      JSON.stringify({
+        type: "clear_chat",
+        sessionId: session.id
       })
     );
   }
@@ -508,9 +536,20 @@ export function App() {
         </aside>
 
         <section className="transcript-panel">
-          <div className="section-heading">
-            <Activity size={18} />
-            <h2>צ'אט</h2>
+          <div className="chat-heading">
+            <div className="section-heading">
+              <Activity size={18} />
+              <h2>צ'אט</h2>
+            </div>
+            <button
+              className="icon-button danger-button"
+              onClick={clearChat}
+              disabled={session.transcriptSegments.length === 0 && session.triggerEvents.length === 0}
+              title="מחיקת היסטוריית צ'אט"
+            >
+              <Trash2 size={16} />
+              נקה צ'אט
+            </button>
           </div>
 
           <div className="transcript-stream">
@@ -811,13 +850,14 @@ function findTriggerMatches(text: string, rules: TriggerRule[]): Array<{ start: 
     }
 
     for (const match of text.matchAll(pattern)) {
-      const prefix = match[1] || "";
-      const value = match[2] || "";
+      const separator = match[1] || "";
+      const attachedPrefix = match[2] || "";
+      const value = match[3] || "";
       if (!value) {
         continue;
       }
 
-      const start = match.index + prefix.length;
+      const start = match.index + separator.length + attachedPrefix.length;
       matches.push({
         start,
         end: start + value.length,
@@ -843,7 +883,7 @@ function triggerPattern(phrase: string): RegExp | undefined {
   }
 
   const source = words.map(escapeRegExp).join("\\s+");
-  return new RegExp(`(^|[^\\p{L}\\p{N}])(${source})(?=$|[^\\p{L}\\p{N}])`, "giu");
+  return new RegExp(`(^|[^\\p{L}\\p{N}])([${HEBREW_TRIGGER_PREFIXES}]{0,3})(${source})(?=$|[^\\p{L}\\p{N}])`, "giu");
 }
 
 function escapeRegExp(value: string): string {
