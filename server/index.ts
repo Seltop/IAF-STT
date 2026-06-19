@@ -121,6 +121,12 @@ monitorWss.on("connection", (ws) => {
       if (message.type === "update_trigger_rules") {
         const state = store.updateTriggerRules(message.sessionId, message.rules as TriggerRule[]);
         broadcastState(message.sessionId, state);
+        return;
+      }
+
+      if (message.type === "update_context_terms") {
+        const state = store.updateContextTerms(message.sessionId, message.terms);
+        broadcastState(message.sessionId, state);
       }
     } catch (error) {
       send(ws, {

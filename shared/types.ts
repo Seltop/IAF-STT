@@ -75,6 +75,7 @@ export interface SessionState {
   transcriptSegments: TranscriptSegment[];
   triggerRules: TriggerRule[];
   triggerEvents: TriggerEvent[];
+  contextTerms: string[];
   providerName: string;
   providerConfigured: boolean;
   providerMessage?: string;
@@ -118,6 +119,11 @@ export type MonitorClientMessage =
       type: "update_trigger_rules";
       sessionId: string;
       rules: TriggerRule[];
+    }
+  | {
+      type: "update_context_terms";
+      sessionId: string;
+      terms: string[];
     };
 
 export type ServerMessage =

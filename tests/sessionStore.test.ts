@@ -47,4 +47,29 @@ describe("SessionStore", () => {
     expect(updated.transcriptSegments).toHaveLength(0);
     expect(updated.triggerEvents).toHaveLength(0);
   });
+
+  it("updates context terms on the session", () => {
+    const store = new SessionStore("test", true, undefined, 4);
+    const state = store.createSession();
+
+    const updated = store.updateContextTerms(state.id, ["יירוט צפוני", " יירוט צפוני ", "חמ״ל"]);
+
+    expect(updated.contextTerms).toEqual(["יירוט צפוני", "חמ״ל"]);
+  });
+
+  it("keeps temporarily empty trigger rules while editing", () => {
+    const store = new SessionStore("test", true, undefined, 4);
+    const state = store.createSession();
+    const updated = store.updateTriggerRules(state.id, [
+      {
+        ...state.triggerRules[0],
+        phrase: "",
+        normalizedPhrase: "old-value"
+      }
+    ]);
+
+    expect(updated.triggerRules).toHaveLength(1);
+    expect(updated.triggerRules[0].phrase).toBe("");
+    expect(updated.triggerRules[0].normalizedPhrase).toBe("");
+  });
 });

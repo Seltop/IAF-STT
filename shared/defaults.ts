@@ -32,3 +32,5 @@ export const DEFAULT_TRIGGER_RULES: TriggerRule[] = [
 ];
 
 export const DEFAULT_CHANNEL_COLORS = ["#2563eb", "#16a34a", "#dc2626", "#7c3aed"];
+
+export const DEFAULT_CONTEXT_TERMS = ["כטבם", "חמ״ל", "מפקד משימה", "צוות קרקע", "יירוט צפוני"];

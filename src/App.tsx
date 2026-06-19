@@ -10,7 +10,7 @@ import {
   Trash2
 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DEFAULT_CHANNEL_COLORS } from "../shared/defaults.js";
+import { DEFAULT_CHANNEL_COLORS, DEFAULT_CONTEXT_TERMS } from "../shared/defaults.js";
 import { normalizeHebrew } from "../shared/hebrew.js";
 import type { Channel, ServerMessage, SessionState, Severity, TriggerRule } from "../shared/types.js";
 import { createSession, exportUrl, fetchSession } from "./lib/api";
@@ -35,13 +35,14 @@ export function App() {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
   const [channelName, setChannelName] = useState("ערוץ 1");
-  const [contextText, setContextText] = useState("כטבם, חמ״ל, מפקד משימה, צוות קרקע, יירוט צפוני");
+  const [contextText, setContextText] = useState("");
   const [newRulePhrase, setNewRulePhrase] = useState("");
   const [newRuleSeverity, setNewRuleSeverity] = useState<Severity>("medium");
   const [toast, setToast] = useState<string | null>(null);
   const [monitorConnected, setMonitorConnected] = useState(false);
   const monitorWsRef = useRef<WebSocket | null>(null);
   const capturesRef = useRef(new Map<string, ActiveCapture>());
+  const syncedContextSessionIdRef = useRef<string | null>(null);
 
   const refreshDevices = useCallback(async () => {
     const inputs = await listAudioInputs();
@@ -115,6 +116,15 @@ export function App() {
     };
   }, [session?.id]);
 
+  useEffect(() => {
+    if (!session?.id || syncedContextSessionIdRef.current === session.id) {
+      return;
+    }
+
+    syncedContextSessionIdRef.current = session.id;
+    setContextText(formatContextTerms(session.contextTerms?.length ? session.contextTerms : DEFAULT_CONTEXT_TERMS));
+  }, [session?.id, session?.contextTerms]);
+
   const finalSegments = useMemo(() => {
     const segments = session?.transcriptSegments.filter((segment) => segment.isFinal).slice(-120) || [];
     return groupFinalSegments(segments);
@@ -152,10 +162,7 @@ export function App() {
         color,
         deviceId: selectedDeviceId || undefined,
         sourceLabel: device?.label,
-        contextTerms: contextText
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean),
+        contextTerms: parseContextTerms(contextText),
         onMessage: handleServerMessage,
         onError: setToast,
         onStopped: () => capturesRef.current.delete(channelId)
@@ -204,12 +211,38 @@ export function App() {
     );
   }
 
+  function applyTriggerRules(rules: TriggerRule[]) {
+    setSession((current) => (current ? { ...current, triggerRules: rules } : current));
+    sendRules(rules);
+  }
+
+  function sendContextTerms(terms: string[]) {
+    if (!session || monitorWsRef.current?.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    monitorWsRef.current.send(
+      JSON.stringify({
+        type: "update_context_terms",
+        sessionId: session.id,
+        terms
+      })
+    );
+  }
+
+  function updateContextText(value: string) {
+    const terms = parseContextTerms(value);
+    setContextText(value);
+    setSession((current) => (current ? { ...current, contextTerms: terms } : current));
+    sendContextTerms(terms);
+  }
+
   function updateRule(ruleId: string, patch: Partial<TriggerRule>) {
     if (!session) {
       return;
     }
 
-    sendRules(
+    applyTriggerRules(
       session.triggerRules.map((rule) =>
         rule.id === ruleId
           ? {
@@ -228,7 +261,7 @@ export function App() {
     }
 
     const phrase = newRulePhrase.trim();
-    sendRules([
+    applyTriggerRules([
       ...session.triggerRules,
       {
         id: crypto.randomUUID(),
@@ -248,7 +281,7 @@ export function App() {
       return;
     }
 
-    sendRules(session.triggerRules.filter((rule) => rule.id !== ruleId));
+    applyTriggerRules(session.triggerRules.filter((rule) => rule.id !== ruleId));
   }
 
   if (!session) {
@@ -299,11 +332,11 @@ export function App() {
           <section className="panel-section">
             <div className="section-heading">
               <Mic size={18} />
-              <h2>ערוצים</h2>
+              <h2>משתתפים</h2>
             </div>
 
             <label className="field">
-              <span>שם</span>
+              <span>שם משתתף</span>
               <input value={channelName} onChange={(event) => setChannelName(event.target.value)} />
             </label>
 
@@ -321,7 +354,8 @@ export function App() {
 
             <label className="field">
               <span>מונחי הקשר</span>
-              <textarea value={contextText} onChange={(event) => setContextText(event.target.value)} rows={3} />
+              <textarea value={contextText} onChange={(event) => updateContextText(event.target.value)} rows={3} />
+              <small className="field-hint">נשלח ל-Soniox בהפעלת מיקרופון חדשה או בהפעלה מחדש של משתתף.</small>
             </label>
 
             <div className="button-row">
@@ -333,10 +367,10 @@ export function App() {
                 className="primary-button"
                 onClick={() => void startChannel()}
                 disabled={!canAddChannel}
-                title="הוספת ערוץ חדש"
+                title="הוספת משתתף חדש"
               >
                 <Plus size={18} />
-                הפעל
+                משתתף חדש
               </button>
             </div>
 
@@ -519,6 +553,28 @@ function averageConfidence(previous?: number, current?: number): number | undefi
     return (previous + current) / 2;
   }
   return previous ?? current;
+}
+
+function parseContextTerms(value: string): string[] {
+  const seen = new Set<string>();
+  const terms: string[] = [];
+
+  for (const rawTerm of value.split(",")) {
+    const term = rawTerm.trim();
+    const key = term.toLocaleLowerCase("he-IL");
+    if (!term || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    terms.push(term);
+  }
+
+  return terms.slice(0, 100);
+}
+
+function formatContextTerms(terms: string[]): string {
+  return terms.join(", ");
 }
 
 function ChannelRow({

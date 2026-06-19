@@ -1,4 +1,4 @@
-import { DEFAULT_TRIGGER_RULES } from "../shared/defaults.js";
+import { DEFAULT_CONTEXT_TERMS, DEFAULT_TRIGGER_RULES } from "../shared/defaults.js";
 import { normalizeHebrew } from "../shared/hebrew.js";
 import { hydrateTriggerRule, matchTriggerRules } from "../shared/triggers.js";
 import type {
@@ -39,6 +39,7 @@ export class SessionStore {
       transcriptSegments: [],
       triggerRules: DEFAULT_TRIGGER_RULES.map((rule) => ({ ...rule })),
       triggerEvents: [],
+      contextTerms: [...DEFAULT_CONTEXT_TERMS],
       providerName: this.providerName,
       providerConfigured: this.providerConfigured,
       providerMessage: this.providerMessage,
@@ -113,9 +114,13 @@ export class SessionStore {
 
   updateTriggerRules(sessionId: string, rules: TriggerRule[]): SessionState {
     const session = this.requireSession(sessionId);
-    session.state.triggerRules = rules
-      .filter((rule) => rule.phrase.trim().length > 0)
-      .map((rule) => hydrateTriggerRule(rule));
+    session.state.triggerRules = rules.map((rule) => hydrateTriggerRule(rule));
+    return this.cloneState(session.state);
+  }
+
+  updateContextTerms(sessionId: string, terms: string[]): SessionState {
+    const session = this.requireSession(sessionId);
+    session.state.contextTerms = normalizeContextTerms(terms);
     return this.cloneState(session.state);
   }
 
@@ -335,4 +340,22 @@ function csvEscape(value: string): string {
   }
 
   return `"${value.replace(/"/g, '""')}"`;
+}
+
+function normalizeContextTerms(terms: string[]): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const rawTerm of terms) {
+    const term = rawTerm.trim();
+    const key = term.toLocaleLowerCase("he-IL");
+    if (!term || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    normalized.push(term);
+  }
+
+  return normalized.slice(0, 100);
 }
