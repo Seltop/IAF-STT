@@ -110,6 +110,11 @@ export type MonitorClientMessage =
       triggerEventId: string;
     }
   | {
+      type: "delete_channel";
+      sessionId: string;
+      channelId: string;
+    }
+  | {
       type: "update_trigger_rules";
       sessionId: string;
       rules: TriggerRule[];

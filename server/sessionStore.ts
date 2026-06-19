@@ -98,6 +98,19 @@ export class SessionStore {
     return { ...channel };
   }
 
+  deleteChannel(sessionId: string, channelId: string): SessionState {
+    const session = this.requireSession(sessionId);
+    session.state.channels = session.state.channels.filter((channel) => channel.id !== channelId);
+    session.state.transcriptSegments = session.state.transcriptSegments.filter(
+      (segment) => segment.channelId !== channelId
+    );
+    session.state.triggerEvents = session.state.triggerEvents.filter((event) => event.channelId !== channelId);
+    session.channelFinalText.delete(channelId);
+    this.deleteChannelScopedKeys(session.lastRuleOffsets, channelId);
+    this.deleteChannelScopedKeys(session.lastRuleTriggerAt, channelId);
+    return this.cloneState(session.state);
+  }
+
   updateTriggerRules(sessionId: string, rules: TriggerRule[]): SessionState {
     const session = this.requireSession(sessionId);
     session.state.triggerRules = rules
@@ -289,6 +302,15 @@ export class SessionStore {
 
   private cloneState(state: SessionState): SessionState {
     return JSON.parse(JSON.stringify(state)) as SessionState;
+  }
+
+  private deleteChannelScopedKeys(map: Map<string, unknown>, channelId: string): void {
+    const prefix = `${channelId}:`;
+    for (const key of map.keys()) {
+      if (key.startsWith(prefix)) {
+        map.delete(key);
+      }
+    }
   }
 }
 

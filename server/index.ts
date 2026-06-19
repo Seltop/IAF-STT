@@ -111,6 +111,13 @@ monitorWss.on("connection", (ws) => {
         return;
       }
 
+      if (message.type === "delete_channel") {
+        closeChannelConnection(message.sessionId, message.channelId);
+        const state = store.deleteChannel(message.sessionId, message.channelId);
+        broadcastState(message.sessionId, state);
+        return;
+      }
+
       if (message.type === "update_trigger_rules") {
         const state = store.updateTriggerRules(message.sessionId, message.rules as TriggerRule[]);
         broadcastState(message.sessionId, state);
@@ -280,6 +287,18 @@ function broadcastState(sessionId: string, state = store.getSession(sessionId)):
 function broadcast(sessionId: string, message: ServerMessage): void {
   for (const client of getSubscribers(sessionId)) {
     send(client, message);
+  }
+}
+
+function closeChannelConnection(sessionId: string, channelId: string): void {
+  for (const [ws, connection] of channelConnections.entries()) {
+    if (connection.sessionId !== sessionId || connection.channelId !== channelId) {
+      continue;
+    }
+
+    provider.closeChannel(connection.providerConnectionId);
+    channelConnections.delete(ws);
+    ws.close();
   }
 }
 

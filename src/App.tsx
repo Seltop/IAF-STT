@@ -134,20 +134,21 @@ export function App() {
     }
   }
 
-  async function startChannel() {
-    if (!session || !canAddChannel) {
+  async function startChannel(channel?: Channel) {
+    if (!session || (!channel && !canAddChannel)) {
       return;
     }
 
-    const color = DEFAULT_CHANNEL_COLORS[session.channels.length % DEFAULT_CHANNEL_COLORS.length];
-    const channelId = crypto.randomUUID();
+    const color = channel?.color || DEFAULT_CHANNEL_COLORS[session.channels.length % DEFAULT_CHANNEL_COLORS.length];
+    const channelId = channel?.id || crypto.randomUUID();
+    const name = channel?.name || channelName.trim() || `ערוץ ${session.channels.length + 1}`;
     const device = devices.find((item) => item.deviceId === selectedDeviceId);
 
     try {
       const capture = await startChannelCapture({
         sessionId: session.id,
         channelId,
-        name: channelName.trim() || `ערוץ ${session.channels.length + 1}`,
+        name,
         color,
         deviceId: selectedDeviceId || undefined,
         sourceLabel: device?.label,
@@ -161,7 +162,9 @@ export function App() {
       });
 
       capturesRef.current.set(channelId, capture);
-      setChannelName(`ערוץ ${session.channels.length + 2}`);
+      if (!channel) {
+        setChannelName(`ערוץ ${session.channels.length + 2}`);
+      }
     } catch (error) {
       setToast(error instanceof Error ? error.message : "הפעלת הערוץ נכשלה");
     }
@@ -170,6 +173,21 @@ export function App() {
   function stopChannel(channelId: string) {
     capturesRef.current.get(channelId)?.stop();
     capturesRef.current.delete(channelId);
+  }
+
+  function deleteChannel(channelId: string) {
+    if (!session || monitorWsRef.current?.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    stopChannel(channelId);
+    monitorWsRef.current.send(
+      JSON.stringify({
+        type: "delete_channel",
+        sessionId: session.id,
+        channelId
+      })
+    );
   }
 
   function sendRules(rules: TriggerRule[]) {
@@ -311,7 +329,12 @@ export function App() {
                 <Settings size={18} />
                 הרשאה
               </button>
-              <button className="primary-button" onClick={startChannel} disabled={!canAddChannel} title="הפעלת ערוץ">
+              <button
+                className="primary-button"
+                onClick={() => void startChannel()}
+                disabled={!canAddChannel}
+                title="הוספת ערוץ חדש"
+              >
                 <Plus size={18} />
                 הפעל
               </button>
@@ -323,7 +346,9 @@ export function App() {
                   key={channel.id}
                   channel={channel}
                   active={capturesRef.current.has(channel.id)}
+                  onStart={() => void startChannel(channel)}
                   onStop={() => stopChannel(channel.id)}
+                  onDelete={() => deleteChannel(channel.id)}
                 />
               ))}
             </div>
@@ -496,7 +521,21 @@ function averageConfidence(previous?: number, current?: number): number | undefi
   return previous ?? current;
 }
 
-function ChannelRow({ channel, active, onStop }: { channel: Channel; active: boolean; onStop: () => void }) {
+function ChannelRow({
+  channel,
+  active,
+  onStart,
+  onStop,
+  onDelete
+}: {
+  channel: Channel;
+  active: boolean;
+  onStart: () => void;
+  onStop: () => void;
+  onDelete: () => void;
+}) {
+  const canStart = !active && (channel.status === "stopped" || channel.status === "idle" || channel.status === "error");
+
   return (
     <article className="channel-row">
       <div className="channel-main">
@@ -508,8 +547,16 @@ function ChannelRow({ channel, active, onStop }: { channel: Channel; active: boo
       </div>
       <div className="channel-actions">
         <StatusPill active={channel.status === "listening"} label={statusLabel(channel.status)} />
-        <button className="icon-only" onClick={onStop} disabled={!active} title="עצירת ערוץ">
-          <Square size={15} />
+        <button
+          className="icon-only"
+          onClick={active ? onStop : onStart}
+          disabled={active ? false : !canStart}
+          title={active ? "עצירת מיקרופון" : "הפעלת מיקרופון לערוץ"}
+        >
+          {active ? <Square size={15} /> : <Mic size={16} />}
+        </button>
+        <button className="icon-only quiet" onClick={onDelete} title="מחיקת ערוץ">
+          <Trash2 size={16} />
         </button>
       </div>
     </article>

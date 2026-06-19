@@ -62,16 +62,28 @@ export async function startChannelCapture(options: ChannelCaptureOptions): Promi
   const processor = audioContext.createScriptProcessor(4096, 1, 1);
   const ws = new WebSocket(websocketUrl("/ws/channel"));
   let stopped = false;
+  let cleanedUp = false;
+
+  const cleanup = () => {
+    if (cleanedUp) {
+      return;
+    }
+
+    cleanedUp = true;
+    stopped = true;
+    processor.disconnect();
+    source.disconnect();
+    if (audioContext.state !== "closed") {
+      void audioContext.close().catch(() => undefined);
+    }
+    stopTracks(stream);
+  };
 
   ws.binaryType = "arraybuffer";
   ws.addEventListener("message", options.onMessage);
   ws.addEventListener("error", () => options.onError("Channel WebSocket error."));
   ws.addEventListener("close", () => {
-    stopped = true;
-    processor.disconnect();
-    source.disconnect();
-    void audioContext.close();
-    stopTracks(stream);
+    cleanup();
     options.onStopped();
   });
 
@@ -112,10 +124,7 @@ export async function startChannelCapture(options: ChannelCaptureOptions): Promi
       }
 
       stopped = true;
-      processor.disconnect();
-      source.disconnect();
-      void audioContext.close();
-      stopTracks(stream);
+      cleanup();
 
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "stop_channel" }));
