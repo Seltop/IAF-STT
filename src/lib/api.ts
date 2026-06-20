@@ -1,7 +1,8 @@
 import type { SessionState } from "../../shared/types.js";
+import { appPath } from "./basePath";
 
 export async function createSession(): Promise<SessionState> {
-  const response = await fetch("/api/sessions", {
+  const response = await fetch(appPath("/api/sessions"), {
     method: "POST"
   });
 
@@ -13,7 +14,7 @@ export async function createSession(): Promise<SessionState> {
 }
 
 export async function fetchSession(sessionId: string): Promise<SessionState> {
-  const response = await fetch(`/api/sessions/${sessionId}/state`);
+  const response = await fetch(appPath(`/api/sessions/${sessionId}/state`));
 
   if (!response.ok) {
     throw new Error("Session not found.");
@@ -23,5 +24,5 @@ export async function fetchSession(sessionId: string): Promise<SessionState> {
 }
 
 export function exportUrl(sessionId: string, format: "json" | "csv"): string {
-  return `/api/sessions/${sessionId}/export?format=${format}`;
+  return appPath(`/api/sessions/${sessionId}/export?format=${format}`);
 }

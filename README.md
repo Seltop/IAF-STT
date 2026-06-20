@@ -29,6 +29,29 @@ Prototype web app for multi-channel Hebrew live speech-to-text monitoring with e
 
 5. Open `http://127.0.0.1:5173`.
 
+## Deploying under `/stt`
+
+For a domain path such as `https://seltop.work/stt`, deploy this as a Node web service, not as a static site. The backend serves the built React app, `/api`, and `/ws` routes.
+
+Use these production commands:
+
+```sh
+npm ci && npm run build
+npm start
+```
+
+Set this environment variable on the host:
+
+```env
+PUBLIC_BASE_PATH=/stt
+```
+
+With that value, the app serves:
+
+- UI: `/stt`
+- API: `/stt/api`
+- WebSockets: `/stt/ws`
+
 ## Providers
 
 - `soniox`: default. Uses Soniox real-time model `stt-rt-v5` with Hebrew language hints, language identification, speaker diarization, endpoint detection, and custom context terms.

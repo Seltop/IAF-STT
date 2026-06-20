@@ -22,15 +22,17 @@ const provider = providerSelection.provider;
 
 const monitorClients = new Map<string, Set<WebSocket>>();
 const channelConnections = new Map<WebSocket, { sessionId: string; channelId: string; providerConnectionId: string }>();
+const basePath = config.publicBasePath;
 
 app.use(express.json({ limit: "1mb" }));
 
-app.post("/api/sessions", (_req, res) => {
+app.post(routePath("/api/sessions"), (_req, res) => {
   res.status(201).json(store.createSession());
 });
 
-app.get("/api/sessions/:id/state", (req, res) => {
-  const state = store.getSession(req.params.id);
+app.get(routePath("/api/sessions/:id/state"), (req, res) => {
+  const sessionId = paramValue(req.params.id);
+  const state = store.getSession(sessionId);
   if (!state) {
     res.status(404).json({ error: "Session not found" });
     return;
@@ -39,26 +41,28 @@ app.get("/api/sessions/:id/state", (req, res) => {
   res.json(state);
 });
 
-app.get("/api/sessions/:id/export", (req, res) => {
+app.get(routePath("/api/sessions/:id/export"), (req, res) => {
+  const sessionId = paramValue(req.params.id);
+
   try {
     const format = req.query.format === "csv" ? "csv" : "json";
-    const filename = `stt-session-${req.params.id}.${format}`;
+    const filename = `stt-session-${sessionId}.${format}`;
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
 
     if (format === "csv") {
-      res.type("text/csv").send(store.exportCsv(req.params.id));
+      res.type("text/csv").send(store.exportCsv(sessionId));
       return;
     }
 
-    res.type("application/json").send(store.exportJson(req.params.id));
+    res.type("application/json").send(store.exportJson(sessionId));
   } catch (error) {
     res.status(404).json({ error: error instanceof Error ? error.message : "Session not found" });
   }
 });
 
 const staticDir = path.resolve(process.cwd(), "dist");
-app.use(express.static(staticDir));
-app.get(/.*/, (_req, res, next) => {
+app.use(routePath("/"), express.static(staticDir));
+app.get(spaFallbackPattern(), (_req, res, next) => {
   if (process.env.NODE_ENV === "development") {
     next();
     return;
@@ -70,12 +74,12 @@ app.get(/.*/, (_req, res, next) => {
 server.on("upgrade", (request, socket, head) => {
   const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
 
-  if (url.pathname === "/ws/monitor") {
+  if (url.pathname === routePath("/ws/monitor")) {
     monitorWss.handleUpgrade(request, socket, head, (ws) => monitorWss.emit("connection", ws, request));
     return;
   }
 
-  if (url.pathname === "/ws/channel") {
+  if (url.pathname === routePath("/ws/channel")) {
     channelWss.handleUpgrade(request, socket, head, (ws) => channelWss.emit("connection", ws, request));
     return;
   }
@@ -330,7 +334,36 @@ function parseJson<T>(raw: string): T | undefined {
 
 server.listen(config.port, () => {
   const keyStatus = providerSelection.configured ? "configured" : "missing";
+  const publicPath = basePath || "/";
   console.log(
-    `STT backend listening on http://127.0.0.1:${config.port} (${providerSelection.providerName}: ${keyStatus})`
+    `STT backend listening on http://127.0.0.1:${config.port}${publicPath} (${providerSelection.providerName}: ${keyStatus})`
   );
 });
+
+function routePath(pathname: string): string {
+  if (!basePath) {
+    return pathname;
+  }
+
+  if (pathname === "/") {
+    return basePath;
+  }
+
+  return `${basePath}${pathname}`;
+}
+
+function spaFallbackPattern(): RegExp {
+  if (!basePath) {
+    return /.*/;
+  }
+
+  return new RegExp(`^${escapeRegExp(basePath)}(?:/.*)?$`);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function paramValue(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? value[0] || "" : value || "";
+}

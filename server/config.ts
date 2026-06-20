@@ -3,6 +3,7 @@ import "dotenv/config";
 export interface AppConfig {
   port: number;
   maxChannels: number;
+  publicBasePath: string;
   sttProvider: "azure" | "soniox";
   azureSpeechKey?: string;
   azureSpeechRegion?: string;
@@ -25,6 +26,7 @@ function readNumber(name: string, fallback: number): number {
 export const config: AppConfig = {
   port: readNumber("PORT", 8787),
   maxChannels: readNumber("MAX_CHANNELS", 4),
+  publicBasePath: readBasePath(process.env.PUBLIC_BASE_PATH || process.env.BASE_PATH),
   sttProvider: readProviderName(),
   azureSpeechKey: process.env.AZURE_SPEECH_KEY,
   azureSpeechRegion: process.env.AZURE_SPEECH_REGION,
@@ -41,4 +43,13 @@ function readProviderName(): AppConfig["sttProvider"] {
   }
 
   return "soniox";
+}
+
+function readBasePath(value: string | undefined): string {
+  const trimmed = value?.trim();
+  if (!trimmed || trimmed === "/") {
+    return "";
+  }
+
+  return `/${trimmed.replace(/^\/+|\/+$/g, "")}`;
 }
