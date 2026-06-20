@@ -1,6 +1,7 @@
 import {
   Activity,
   AlertTriangle,
+  Copy,
   Download,
   Mic,
   Plus,
@@ -370,6 +371,17 @@ export function App() {
     applyTriggerRules(session.triggerRules.filter((rule) => rule.id !== ruleId));
   }
 
+  async function copySessionLink() {
+    if (!session) {
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.set("session", session.id);
+    const copied = await copyText(url.toString());
+    setToast(copied ? "Session link copied" : url.toString());
+  }
+
   if (!session) {
     return (
       <main className="boot" dir="rtl">
@@ -395,6 +407,10 @@ export function App() {
           </div>
         </div>
         <div className="top-actions">
+          <button className="icon-button" onClick={() => void copySessionLink()} title="Copy session link">
+            <Copy size={18} />
+            Link
+          </button>
           <a className="icon-button" href={exportUrl(session.id, "csv")} title="ייצוא CSV">
             <Download size={18} />
             CSV
@@ -918,4 +934,29 @@ function formatTime(value: string): string {
     minute: "2-digit",
     second: "2-digit"
   }).format(new Date(value));
+}
+
+async function copyText(value: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    // Fall back to a temporary textarea below.
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+
+  try {
+    return document.execCommand("copy");
+  } finally {
+    document.body.removeChild(textarea);
+  }
 }
