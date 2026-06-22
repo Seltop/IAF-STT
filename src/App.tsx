@@ -8,7 +8,8 @@ import {
   Radio,
   Settings,
   Square,
-  Trash2
+  Trash2,
+  UserPlus
 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_CHANNEL_COLORS, DEFAULT_CONTEXT_TERMS } from "../shared/defaults.js";
@@ -153,6 +154,32 @@ export function App() {
     () => session?.transcriptSegments.filter((segment) => !segment.isFinal) || [],
     [session]
   );
+  const chatItems = useMemo<ChatItem[]>(() => {
+    if (!session) {
+      return [];
+    }
+
+    return [
+      ...session.channels.map((channel) => ({
+        type: "join" as const,
+        id: `join-${channel.id}`,
+        createdAt: channel.createdAt,
+        channel
+      })),
+      ...finalSegments.map((segment) => ({
+        type: "segment" as const,
+        id: segment.id,
+        createdAt: segment.createdAt,
+        segment
+      })),
+      ...provisionalSegments.map((segment) => ({
+        type: "segment" as const,
+        id: segment.id,
+        createdAt: segment.createdAt,
+        segment
+      }))
+    ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  }, [session, finalSegments, provisionalSegments]);
   const canAddChannel = Boolean(session && session.channels.length < session.maxChannels);
 
   async function unlockDevices() {
@@ -569,27 +596,22 @@ export function App() {
           </div>
 
           <div className="transcript-stream">
-            {finalSegments.length === 0 && provisionalSegments.length === 0 && (
+            {chatItems.length === 0 && (
               <div className="empty-state">ממתין לשמע חי</div>
             )}
 
-            {finalSegments.map((segment) => (
-              <TranscriptLine
-                key={segment.id}
-                segment={segment}
-                channel={session.channels.find((channel) => channel.id === segment.channelId)}
-                rules={session.triggerRules}
-              />
-            ))}
-
-            {provisionalSegments.map((segment) => (
-              <TranscriptLine
-                key={segment.id}
-                segment={segment}
-                channel={session.channels.find((channel) => channel.id === segment.channelId)}
-                rules={session.triggerRules}
-              />
-            ))}
+            {chatItems.map((item) =>
+              item.type === "join" ? (
+                <ParticipantJoinedNotice key={item.id} channel={item.channel} />
+              ) : (
+                <TranscriptLine
+                  key={item.id}
+                  segment={item.segment}
+                  channel={session.channels.find((channel) => channel.id === item.segment.channelId)}
+                  rules={session.triggerRules}
+                />
+              )
+            )}
           </div>
         </section>
 
@@ -606,6 +628,19 @@ export function App() {
 }
 
 type TranscriptSegment = SessionState["transcriptSegments"][number];
+type ChatItem =
+  | {
+      type: "join";
+      id: string;
+      createdAt: string;
+      channel: Channel;
+    }
+  | {
+      type: "segment";
+      id: string;
+      createdAt: string;
+      segment: TranscriptSegment;
+    };
 
 function groupFinalSegments(segments: TranscriptSegment[]): TranscriptSegment[] {
   const groups: TranscriptSegment[] = [];
@@ -797,6 +832,18 @@ function ChannelRow({
           <Trash2 size={16} />
         </button>
       </div>
+    </article>
+  );
+}
+
+function ParticipantJoinedNotice({ channel }: { channel: Channel }) {
+  return (
+    <article className="join-notice">
+      <UserPlus size={15} />
+      <span>
+        משתתף הצטרף: <strong>{channel.name}</strong>
+      </span>
+      <time>{formatTime(channel.createdAt)}</time>
     </article>
   );
 }

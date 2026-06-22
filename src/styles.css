@@ -524,6 +524,29 @@ textarea {
   border-color: #4a4a4a;
 }
 
+.join-notice {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(560px, 92%);
+  padding: 8px 12px;
+  border: 1px solid rgba(20, 184, 166, 0.32);
+  border-radius: 999px;
+  background: rgba(20, 184, 166, 0.08);
+  color: #cbd5e1;
+  font-size: 0.84rem;
+}
+
+.join-notice strong {
+  color: #f8fafc;
+}
+
+.join-notice time {
+  color: #8aa0ba;
+  font-size: 0.76rem;
+}
+
 .line-meta {
   display: flex;
   align-items: center;
