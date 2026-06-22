@@ -633,22 +633,123 @@ textarea {
 }
 
 @media (max-width: 760px) {
+  body {
+    overflow: auto;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+    height: auto;
+  }
+
+  .app-shell {
+    min-height: 100dvh;
+    height: auto;
+  }
+
   .topbar {
     align-items: stretch;
     flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  h1 {
+    font-size: 1.16rem;
+  }
+
+  .meta-row,
+  .top-actions {
+    gap: 7px;
+  }
+
+  .top-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .top-actions .icon-button {
+    width: 100%;
+    padding: 0 8px;
   }
 
   .workspace {
     display: flex;
     flex-direction: column;
+    min-height: auto;
+    overflow: visible;
   }
 
   .control-panel {
     border: 0;
+    order: 2;
+    overflow: visible;
   }
 
   .control-panel,
   .transcript-panel {
     padding: 14px;
+  }
+
+  .transcript-panel {
+    order: 1;
+    min-height: 62dvh;
+    max-height: none;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  }
+
+  .chat-heading {
+    align-items: stretch;
+  }
+
+  .chat-heading .section-heading {
+    flex: 1;
+  }
+
+  .transcript-stream {
+    min-height: 46dvh;
+    max-height: 56dvh;
+  }
+
+  .transcript-line {
+    width: 100%;
+    align-self: stretch;
+    padding: 12px;
+  }
+
+  .join-notice {
+    max-width: 100%;
+    border-radius: 8px;
+  }
+
+  .rule-add,
+  .rule-row {
+    grid-template-columns: minmax(0, 1fr) 82px 38px;
+  }
+
+  .rule-row {
+    grid-template-columns: minmax(0, 1fr) 78px 44px 38px;
+  }
+}
+
+@media (max-width: 460px) {
+  .top-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .button-row {
+    flex-direction: column;
+  }
+
+  .rule-add,
+  .rule-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rule-row .icon-only,
+  .rule-add .icon-only {
+    width: 100%;
   }
 }
