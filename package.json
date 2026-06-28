@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently \"vite --host 127.0.0.1\" \"tsx watch server/index.ts\"",
+    "local:stt": "powershell -NoProfile -ExecutionPolicy Bypass -File local-stt/start-native.ps1",
+    "local:stt:docker": "docker compose -f local-stt/docker-compose.yml up --build",
     "build": "tsc -p tsconfig.server.json && vite build",
     "start": "node dist-server/server/index.js",
     "preview": "node dist-server/server/index.js",

@@ -3,25 +3,22 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import { config } from "./config.js";
-import { createProvider } from "./providers/providerFactory.js";
+import { createProviders } from "./providers/providerFactory.js";
 import { SessionStore } from "./sessionStore.js";
-import type { Channel, MonitorClientMessage, ServerMessage, TriggerRule } from "../shared/types.js";
+import type { Channel, MonitorClientMessage, ProviderMode, ServerMessage, TriggerRule } from "../shared/types.js";
 
 const app = express();
 const server = createServer(app);
 const monitorWss = new WebSocketServer({ noServer: true });
 const channelWss = new WebSocketServer({ noServer: true });
-const providerSelection = createProvider(config);
-const store = new SessionStore(
-  providerSelection.providerName,
-  providerSelection.configured,
-  providerSelection.message,
-  config.maxChannels
-);
-const provider = providerSelection.provider;
+const providerRegistry = createProviders(config);
+const store = new SessionStore(providerRegistry.statuses, config.maxChannels);
 
 const monitorClients = new Map<string, Set<WebSocket>>();
-const channelConnections = new Map<WebSocket, { sessionId: string; channelId: string; providerConnectionId: string }>();
+const channelConnections = new Map<
+  WebSocket,
+  { sessionId: string; channelId: string; providerMode: ProviderMode; providerConnectionId: string }
+>();
 const basePath = config.publicBasePath;
 
 app.use(express.json({ limit: "1mb" }));
@@ -159,7 +156,7 @@ channelWss.on("connection", (ws) => {
 
     if (isBinary) {
       if (current?.providerConnectionId) {
-        provider.sendAudio(current.providerConnectionId, Buffer.from(data as Buffer));
+        providerRegistry.providers.get(current.providerMode)?.sendAudio(current.providerConnectionId, Buffer.from(data as Buffer));
       }
       return;
     }
@@ -178,7 +175,7 @@ channelWss.on("connection", (ws) => {
     if (message.type === "stop_channel" && current) {
       store.setChannelStatus(current.sessionId, current.channelId, "stopping");
       broadcastState(current.sessionId);
-      provider.stopChannel(current.providerConnectionId);
+      providerRegistry.providers.get(current.providerMode)?.stopChannel(current.providerConnectionId);
     }
   });
 
@@ -188,7 +185,7 @@ channelWss.on("connection", (ws) => {
       return;
     }
 
-    provider.closeChannel(current.providerConnectionId);
+    providerRegistry.providers.get(current.providerMode)?.closeChannel(current.providerConnectionId);
     channelConnections.delete(ws);
 
     try {
@@ -205,14 +202,21 @@ function handleJoinChannel(ws: WebSocket, raw: Record<string, unknown>): void {
   const channelId = String(raw.channelId || crypto.randomUUID());
   const name = String(raw.name || "Channel");
   const color = String(raw.color || "#2563eb");
+  const providerMode = readProviderMode(raw.providerMode);
+  const provider = providerRegistry.providers.get(providerMode);
   const sourceLabel = typeof raw.sourceLabel === "string" ? raw.sourceLabel : undefined;
   const contextTerms = Array.isArray(raw.contextTerms) ? raw.contextTerms.map(String) : [];
 
   try {
+    if (!provider) {
+      throw new Error(`Provider mode ${providerMode} is not available.`);
+    }
+
     const channel: Channel = store.upsertChannel(sessionId, {
       id: channelId,
       name,
       color,
+      mode: providerMode,
       sourceLabel
     });
     send(ws, { type: "channel_status", channel });
@@ -222,7 +226,16 @@ function handleJoinChannel(ws: WebSocket, raw: Record<string, unknown>): void {
       {
         channelId,
         channelName: name,
-        contextTerms
+        providerMode,
+        contextTerms,
+        keywords:
+          store
+            .getSession(sessionId)
+            ?.triggerRules.map((rule) => ({
+              phrase: rule.phrase,
+              severity: rule.severity,
+              enabled: rule.enabled
+            })) || []
       },
       {
         onOpen: () => {
@@ -273,6 +286,7 @@ function handleJoinChannel(ws: WebSocket, raw: Record<string, unknown>): void {
     channelConnections.set(ws, {
       sessionId,
       channelId,
+      providerMode,
       providerConnectionId
     });
   } catch (error) {
@@ -312,7 +326,7 @@ function closeChannelConnection(sessionId: string, channelId: string): void {
       continue;
     }
 
-    provider.closeChannel(connection.providerConnectionId);
+    providerRegistry.providers.get(connection.providerMode)?.closeChannel(connection.providerConnectionId);
     channelConnections.delete(ws);
     ws.close();
   }
@@ -333,11 +347,11 @@ function parseJson<T>(raw: string): T | undefined {
 }
 
 server.listen(config.port, () => {
-  const keyStatus = providerSelection.configured ? "configured" : "missing";
+  const statuses = providerRegistry.statuses
+    .map((provider) => `${provider.name}: ${provider.configured ? "configured" : "missing"}`)
+    .join(", ");
   const publicPath = basePath || "/";
-  console.log(
-    `STT backend listening on http://127.0.0.1:${config.port}${publicPath} (${providerSelection.providerName}: ${keyStatus})`
-  );
+  console.log(`STT backend listening on http://127.0.0.1:${config.port}${publicPath} (${statuses})`);
 });
 
 function routePath(pathname: string): string {
@@ -366,4 +380,8 @@ function escapeRegExp(value: string): string {
 
 function paramValue(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] || "" : value || "";
+}
+
+function readProviderMode(value: unknown): ProviderMode {
+  return value === "local" ? "local" : "soniox";
 }

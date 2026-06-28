@@ -1,10 +1,12 @@
 import { websocketUrl } from "./ws";
+import type { ProviderMode } from "../../shared/types.js";
 
 export interface ChannelCaptureOptions {
   sessionId: string;
   channelId: string;
   name: string;
   color: string;
+  providerMode: ProviderMode;
   deviceId?: string;
   sourceLabel?: string;
   contextTerms?: string[];
@@ -95,6 +97,7 @@ export async function startChannelCapture(options: ChannelCaptureOptions): Promi
         channelId: options.channelId,
         name: options.name,
         color: options.color,
+        providerMode: options.providerMode,
         sourceLabel: options.sourceLabel,
         contextTerms: options.contextTerms || []
       })

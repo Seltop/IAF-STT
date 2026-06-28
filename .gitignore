@@ -5,3 +5,5 @@ dist-server/
 .cache/
 coverage/
 *.log
+local-stt/.venv/
+local-stt/.python-packages/

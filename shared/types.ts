@@ -1,5 +1,14 @@
 export type Severity = "low" | "medium" | "high";
 
+export type ProviderMode = "soniox" | "local";
+
+export interface ProviderStatus {
+  mode: ProviderMode;
+  name: string;
+  configured: boolean;
+  message?: string;
+}
+
 export type ChannelStatus =
   | "idle"
   | "connecting"
@@ -12,6 +21,7 @@ export interface Channel {
   id: string;
   name: string;
   color: string;
+  mode: ProviderMode;
   status: ChannelStatus;
   sourceLabel?: string;
   error?: string;
@@ -31,6 +41,7 @@ export interface TranscriptToken {
 export interface TranscriptSegment {
   id: string;
   channelId: string;
+  mode: ProviderMode;
   text: string;
   isFinal: boolean;
   tokens: TranscriptToken[];
@@ -62,6 +73,7 @@ export interface TriggerEvent {
   severity: Severity;
   color: string;
   channelId: string;
+  mode: ProviderMode;
   segmentId: string;
   transcriptText: string;
   createdAt: string;
@@ -76,6 +88,7 @@ export interface SessionState {
   triggerRules: TriggerRule[];
   triggerEvents: TriggerEvent[];
   contextTerms: string[];
+  providers: ProviderStatus[];
   providerName: string;
   providerConfigured: boolean;
   providerMessage?: string;
@@ -89,6 +102,7 @@ export type ChannelClientMessage =
       channelId: string;
       name: string;
       color: string;
+      providerMode?: ProviderMode;
       sourceLabel?: string;
       contextTerms?: string[];
     }

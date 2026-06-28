@@ -14,7 +14,7 @@ import {
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_CHANNEL_COLORS, DEFAULT_CONTEXT_TERMS } from "../shared/defaults.js";
 import { normalizeHebrew } from "../shared/hebrew.js";
-import type { Channel, ServerMessage, SessionState, Severity, TriggerRule } from "../shared/types.js";
+import type { Channel, ProviderMode, ServerMessage, SessionState, Severity, TriggerRule } from "../shared/types.js";
 import { createSession, exportUrl, fetchSession } from "./lib/api";
 import {
   type ActiveCapture,
@@ -33,6 +33,7 @@ const severityColors: Record<Severity, string> = {
 const CHAT_GROUP_GAP_MS = 25_000;
 const HEBREW_TRIGGER_PREFIXES = "ובכלמהש";
 const SETTINGS_STORAGE_KEY = "hebrew-stt-monitor-settings-v1";
+const MODE_STORAGE_KEY = "hebrew-stt-monitor-provider-mode-v1";
 
 interface PersistedSettings {
   contextTerms?: string[];
@@ -48,6 +49,8 @@ export function App() {
   const [contextText, setContextText] = useState("");
   const [newRulePhrase, setNewRulePhrase] = useState("");
   const [newRuleSeverity, setNewRuleSeverity] = useState<Severity>("medium");
+  const [activeMode, setActiveMode] = useState<ProviderMode>(() => readPersistedProviderMode());
+  const [showLocalTranscript, setShowLocalTranscript] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [monitorConnected, setMonitorConnected] = useState(false);
   const monitorWsRef = useRef<WebSocket | null>(null);
@@ -146,13 +149,29 @@ export function App() {
     setContextText(formatContextTerms(session.contextTerms?.length ? session.contextTerms : DEFAULT_CONTEXT_TERMS));
   }, [session?.id, session?.contextTerms]);
 
+  const activeChannels = useMemo(
+    () => session?.channels.filter((channel) => channel.mode === activeMode) || [],
+    [activeMode, session]
+  );
+  const activeTranscriptSegments = useMemo(
+    () => session?.transcriptSegments.filter((segment) => segment.mode === activeMode) || [],
+    [activeMode, session]
+  );
+  const activeTriggerEvents = useMemo(
+    () => session?.triggerEvents.filter((event) => event.mode === activeMode) || [],
+    [activeMode, session]
+  );
+  const activeProviderStatus = useMemo(
+    () => session?.providers?.find((provider) => provider.mode === activeMode),
+    [activeMode, session]
+  );
   const finalSegments = useMemo(() => {
-    const segments = session?.transcriptSegments.filter((segment) => segment.isFinal).slice(-120) || [];
+    const segments = activeTranscriptSegments.filter((segment) => segment.isFinal).slice(-120);
     return groupFinalSegments(segments);
-  }, [session]);
+  }, [activeTranscriptSegments]);
   const provisionalSegments = useMemo(
-    () => session?.transcriptSegments.filter((segment) => !segment.isFinal) || [],
-    [session]
+    () => activeTranscriptSegments.filter((segment) => !segment.isFinal),
+    [activeTranscriptSegments]
   );
   const chatItems = useMemo<ChatItem[]>(() => {
     if (!session) {
@@ -160,7 +179,7 @@ export function App() {
     }
 
     return [
-      ...session.channels.map((channel) => ({
+      ...activeChannels.map((channel) => ({
         type: "join" as const,
         id: `join-${channel.id}`,
         createdAt: channel.createdAt,
@@ -179,7 +198,7 @@ export function App() {
         segment
       }))
     ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-  }, [session, finalSegments, provisionalSegments]);
+  }, [session, activeChannels, finalSegments, provisionalSegments]);
   const canAddChannel = Boolean(session && session.channels.length < session.maxChannels);
 
   async function unlockDevices() {
@@ -196,9 +215,10 @@ export function App() {
       return;
     }
 
+    const providerMode = channel?.mode || activeMode;
     const color = channel?.color || DEFAULT_CHANNEL_COLORS[session.channels.length % DEFAULT_CHANNEL_COLORS.length];
     const channelId = channel?.id || crypto.randomUUID();
-    const name = channel?.name || channelName.trim() || `ערוץ ${session.channels.length + 1}`;
+    const name = channel?.name || channelName.trim() || `ערוץ ${activeChannels.length + 1}`;
     const device = devices.find((item) => item.deviceId === selectedDeviceId);
 
     try {
@@ -207,6 +227,7 @@ export function App() {
         channelId,
         name,
         color,
+        providerMode,
         deviceId: selectedDeviceId || undefined,
         sourceLabel: device?.label,
         contextTerms: parseContextTerms(contextText),
@@ -217,7 +238,7 @@ export function App() {
 
       capturesRef.current.set(channelId, capture);
       if (!channel) {
-        setChannelName(`ערוץ ${session.channels.length + 2}`);
+        setChannelName(`ערוץ ${activeChannels.length + 2}`);
       }
     } catch (error) {
       setToast(error instanceof Error ? error.message : "הפעלת הערוץ נכשלה");
@@ -409,6 +430,15 @@ export function App() {
     setToast(copied ? "Session link copied" : url.toString());
   }
 
+  function switchMode(mode: ProviderMode) {
+    setActiveMode(mode);
+    try {
+      window.localStorage.setItem(MODE_STORAGE_KEY, mode);
+    } catch {
+      // localStorage may be unavailable in hardened browser settings.
+    }
+  }
+
   if (!session) {
     return (
       <main className="boot" dir="rtl">
@@ -419,7 +449,7 @@ export function App() {
   }
 
   return (
-    <main className="app-shell" dir="rtl">
+    <main className={`app-shell ${activeMode === "local" ? "local-shell" : "soniox-shell"}`} dir="rtl">
       <header className="topbar">
         <div className="title-block">
           <div className="title-row">
@@ -428,8 +458,8 @@ export function App() {
           </div>
           <div className="meta-row">
             <StatusPill active={monitorConnected} label={monitorConnected ? "מחובר" : "מנותק"} />
-            <span>{session.providerName}</span>
-            <span>{session.channels.length}/{session.maxChannels} ערוצים</span>
+            <span>{activeProviderStatus?.name || session.providerName}</span>
+            <span>{activeChannels.length}/{session.maxChannels} ערוצים</span>
             <span>{session.id.slice(0, 8)}</span>
           </div>
         </div>
@@ -438,6 +468,22 @@ export function App() {
             <Copy size={18} />
             Link
           </button>
+          <div className="mode-switch" role="group" aria-label="Provider mode">
+            <button
+              type="button"
+              className={activeMode === "soniox" ? "active" : ""}
+              onClick={() => switchMode("soniox")}
+            >
+              Soniox
+            </button>
+            <button
+              type="button"
+              className={activeMode === "local" ? "active" : ""}
+              onClick={() => switchMode("local")}
+            >
+              Local AI
+            </button>
+          </div>
           <a className="icon-button" href={exportUrl(session.id, "csv")} title="ייצוא CSV">
             <Download size={18} />
             CSV
@@ -449,10 +495,10 @@ export function App() {
         </div>
       </header>
 
-      {!session.providerConfigured && (
+      {activeProviderStatus && !activeProviderStatus.configured && (
         <section className="alert-strip">
           <AlertTriangle size={18} />
-          <span>{session.providerMessage || "חסרים פרטי התחברות לספק התמלול. התצוגה תעבוד, אך תמלול חי לא יתחיל."}</span>
+          <span>{activeProviderStatus.message || "Provider is not configured."}</span>
         </section>
       )}
 
@@ -504,7 +550,7 @@ export function App() {
             </div>
 
             <div className="channel-list">
-              {session.channels.map((channel) => (
+              {activeChannels.map((channel) => (
                 <ChannelRow
                   key={channel.id}
                   channel={channel}
@@ -578,7 +624,21 @@ export function App() {
           </section>
         </aside>
 
-        <section className="transcript-panel">
+        <section className={`transcript-panel ${activeMode === "local" ? "local-dashboard-panel" : ""}`}>
+          {activeMode === "local" ? (
+            <LocalDashboard
+              channels={activeChannels}
+              triggerEvents={activeTriggerEvents}
+              finalSegments={finalSegments}
+              provisionalSegments={provisionalSegments}
+              rules={session.triggerRules}
+              showTranscript={showLocalTranscript}
+              onToggleTranscript={() => setShowLocalTranscript((value) => !value)}
+              onClear={clearChat}
+              canClear={session.transcriptSegments.length > 0 || session.triggerEvents.length > 0}
+            />
+          ) : (
+            <>
           <div className="chat-heading">
             <div className="section-heading">
               <Activity size={18} />
@@ -613,6 +673,8 @@ export function App() {
               )
             )}
           </div>
+            </>
+          )}
         </section>
 
       </section>
@@ -641,6 +703,140 @@ type ChatItem =
       createdAt: string;
       segment: TranscriptSegment;
     };
+type TriggerEventItem = SessionState["triggerEvents"][number];
+
+function LocalDashboard({
+  channels,
+  triggerEvents,
+  finalSegments,
+  provisionalSegments,
+  rules,
+  showTranscript,
+  onToggleTranscript,
+  onClear,
+  canClear
+}: {
+  channels: Channel[];
+  triggerEvents: TriggerEventItem[];
+  finalSegments: TranscriptSegment[];
+  provisionalSegments: TranscriptSegment[];
+  rules: TriggerRule[];
+  showTranscript: boolean;
+  onToggleTranscript: () => void;
+  onClear: () => void;
+  canClear: boolean;
+}) {
+  const listening = channels.some((channel) => channel.status === "listening");
+  const activeRules = rules.filter((rule) => rule.enabled);
+  const highRules = activeRules.filter((rule) => rule.severity === "high");
+  const recentEvents = [...triggerEvents].slice(-80).reverse();
+
+  return (
+    <>
+      <div className="local-dashboard-header">
+        <div>
+          <div className="section-heading">
+            <AlertTriangle size={18} />
+            <h2>Local keyword alerts</h2>
+          </div>
+          <div className="local-subtitle">Native GPU Hebrew keyword recognition</div>
+        </div>
+        <div className="local-dashboard-actions">
+          <StatusPill active={listening} label={listening ? "Armed" : "Idle"} />
+          <button className="icon-button" onClick={onToggleTranscript}>
+            <Activity size={16} />
+            {showTranscript ? "Hide transcript" : "Show transcript"}
+          </button>
+          <button className="icon-button danger-button" onClick={onClear} disabled={!canClear}>
+            <Trash2 size={16} />
+            Clear
+          </button>
+        </div>
+      </div>
+
+      <div className="local-alert-grid">
+        <section className="local-alert-feed">
+          <div className="local-section-title">Alerts</div>
+          {recentEvents.length === 0 && <div className="empty-state">Waiting for configured Hebrew keywords</div>}
+          {recentEvents.map((event) => (
+            <LocalAlertRow
+              key={event.id}
+              event={event}
+              channel={channels.find((channel) => channel.id === event.channelId)}
+              rule={rules.find((rule) => rule.id === event.ruleId)}
+            />
+          ))}
+        </section>
+
+        <section className="local-keyword-summary">
+          <div className="local-stat">
+            <span>Active keywords</span>
+            <strong>{activeRules.length}</strong>
+          </div>
+          <div className="local-stat">
+            <span>High severity</span>
+            <strong>{highRules.length}</strong>
+          </div>
+          <div className="local-stat">
+            <span>Local sources</span>
+            <strong>{channels.length}</strong>
+          </div>
+        </section>
+      </div>
+
+      {showTranscript && (
+        <div className="local-transcript-drawer">
+          <div className="local-section-title">Debug transcript</div>
+          <div className="transcript-stream">
+            {finalSegments.length === 0 && provisionalSegments.length === 0 && (
+              <div className="empty-state">No local transcript yet</div>
+            )}
+            {finalSegments.map((segment) => (
+              <TranscriptLine
+                key={segment.id}
+                segment={segment}
+                channel={channels.find((channel) => channel.id === segment.channelId)}
+                rules={rules}
+              />
+            ))}
+            {provisionalSegments.map((segment) => (
+              <TranscriptLine
+                key={segment.id}
+                segment={segment}
+                channel={channels.find((channel) => channel.id === segment.channelId)}
+                rules={rules}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function LocalAlertRow({
+  event,
+  channel,
+  rule
+}: {
+  event: TriggerEventItem;
+  channel?: Channel;
+  rule?: TriggerRule;
+}) {
+  return (
+    <article className={`local-alert-row ${event.severity}`} style={{ borderColor: event.color }}>
+      <div className="local-alert-topline">
+        <strong>{event.phrase}</strong>
+        <span>{formatTime(event.createdAt)}</span>
+      </div>
+      <p>{event.transcriptText}</p>
+      <div className="local-alert-meta">
+        <span>{channel?.name || "Local channel"}</span>
+        <span>{rule?.severity || event.severity}</span>
+      </div>
+    </article>
+  );
+}
 
 function groupFinalSegments(segments: TranscriptSegment[]): TranscriptSegment[] {
   const groups: TranscriptSegment[] = [];
@@ -716,9 +912,29 @@ function applyPersistedSettings(session: SessionState, settings: PersistedSettin
 
   return {
     ...session,
+    channels: session.channels.map((channel) => ({
+      ...channel,
+      mode: channel.mode || "soniox"
+    })),
+    transcriptSegments: session.transcriptSegments.map((segment) => ({
+      ...segment,
+      mode: segment.mode || "soniox"
+    })),
+    triggerEvents: session.triggerEvents.map((event) => ({
+      ...event,
+      mode: event.mode || "soniox"
+    })),
     contextTerms,
     triggerRules: settings.triggerRules?.length ? settings.triggerRules : session.triggerRules
   };
+}
+
+function readPersistedProviderMode(): ProviderMode {
+  try {
+    return window.localStorage.getItem(MODE_STORAGE_KEY) === "local" ? "local" : "soniox";
+  } catch {
+    return "soniox";
+  }
 }
 
 function readPersistedSettings(): PersistedSettings {

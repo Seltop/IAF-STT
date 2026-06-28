@@ -55,6 +55,7 @@ With that value, the app serves:
 ## Providers
 
 - `soniox`: default. Uses Soniox real-time model `stt-rt-v5` with Hebrew language hints, language identification, speaker diarization, endpoint detection, and custom context terms.
+- `local`: fully local/offline mode. Start it with `npm.cmd run local:stt`, then use the Soniox/Local AI switch in the UI. The default no-Docker path uses native Python with `faster-whisper`, the Hebrew `ivrit-ai/whisper-large-v3-turbo-ct2` model, and NVIDIA CUDA when available. Docker/vLLM Caspi remains available with `npm.cmd run local:stt:docker`.
 - `azure`: optional baseline. Set `STT_PROVIDER=azure`, `AZURE_SPEECH_KEY`, and `AZURE_SPEECH_REGION`. Uses Azure Speech with Hebrew locale `he-IL`.
 
 `SONIOX_MAX_ENDPOINT_DELAY_MS` controls how long Soniox waits before finalizing a speech segment. Higher values usually split lines less but add a little latency.
@@ -77,5 +78,6 @@ Examples:
 ## Notes
 
 - V1 actions are UI/log only: transcript highlights, trigger events, and acknowledgement.
+- Local AI mode keeps audio on the machine. The default native path requires Python and uses the Python NVIDIA CUDA/cuDNN runtime packages for best performance; Docker is optional.
 - Raw audio is streamed to the STT provider and is not stored by this app.
 - Multi-channel means one live STT stream per configured browser microphone/client channel.

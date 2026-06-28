@@ -4,6 +4,8 @@ import { hydrateTriggerRule, matchTriggerRules } from "../shared/triggers.js";
 import type {
   Channel,
   ChannelStatus,
+  ProviderMode,
+  ProviderStatus,
   SessionState,
   TranscriptSegment,
   TranscriptToken,
@@ -22,13 +24,14 @@ interface SessionInternal {
 
 export class SessionStore {
   private readonly sessions = new Map<string, SessionInternal>();
+  private readonly providerStatuses: ProviderStatus[];
 
   constructor(
-    private readonly providerName: string,
-    private readonly providerConfigured: boolean,
-    private readonly providerMessage: string | undefined,
+    providerStatuses: ProviderStatus[],
     private readonly maxChannels: number
-  ) {}
+  ) {
+    this.providerStatuses = providerStatuses.map((provider) => ({ ...provider }));
+  }
 
   createSession(): SessionState {
     const id = crypto.randomUUID();
@@ -40,9 +43,10 @@ export class SessionStore {
       triggerRules: DEFAULT_TRIGGER_RULES.map((rule) => ({ ...rule })),
       triggerEvents: [],
       contextTerms: [...DEFAULT_CONTEXT_TERMS],
-      providerName: this.providerName,
-      providerConfigured: this.providerConfigured,
-      providerMessage: this.providerMessage,
+      providers: this.providerStatuses.map((provider) => ({ ...provider })),
+      providerName: this.providerStatuses[0]?.name || "Unknown",
+      providerConfigured: this.providerStatuses[0]?.configured || false,
+      providerMessage: this.providerStatuses[0]?.message,
       maxChannels: this.maxChannels
     };
 
@@ -65,11 +69,15 @@ export class SessionStore {
     return this.sessions.get(id);
   }
 
-  upsertChannel(sessionId: string, channel: Omit<Channel, "status" | "createdAt">): Channel {
+  upsertChannel(
+    sessionId: string,
+    channel: Omit<Channel, "status" | "createdAt" | "mode"> & { mode?: ProviderMode }
+  ): Channel {
     const session = this.requireSession(sessionId);
     const existing = session.state.channels.find((item) => item.id === channel.id);
     const updated: Channel = {
       ...channel,
+      mode: channel.mode || existing?.mode || "soniox",
       status: existing?.status || "connecting",
       createdAt: existing?.createdAt || new Date().toISOString()
     };
@@ -151,13 +159,14 @@ export class SessionStore {
     finished: boolean;
   } {
     const session = this.requireSession(sessionId);
+    const mode = this.getChannelMode(session, channelId);
     const finalTokens = result.tokens.filter((token) => token.isFinal);
     const provisionalTokens = result.tokens.filter((token) => !token.isFinal);
     const segments: TranscriptSegment[] = [];
     const triggerEvents: TriggerEvent[] = [];
 
     if (finalTokens.length > 0) {
-      const segment = this.createSegment(channelId, finalTokens, true, result);
+      const segment = this.createSegment(channelId, mode, finalTokens, true, result);
       const rollingText = `${session.channelFinalText.get(channelId) || ""}${segment.text}`;
       session.channelFinalText.set(channelId, rollingText);
       segment.matchedRuleIds = this.findTriggeredRules(session, channelId, rollingText, segment, triggerEvents);
@@ -168,7 +177,7 @@ export class SessionStore {
     this.removeProvisionalSegment(session.state, channelId);
 
     if (provisionalTokens.length > 0) {
-      const segment = this.createSegment(channelId, provisionalTokens, false, result);
+      const segment = this.createSegment(channelId, mode, provisionalTokens, false, result);
       segment.matchedRuleIds = matchTriggerRules(segment.text, session.state.triggerRules).map((rule) => rule.id);
       session.state.transcriptSegments.push(segment);
       segments.push(segment);
@@ -193,13 +202,14 @@ export class SessionStore {
 
   exportCsv(sessionId: string): string {
     const state = this.requireSession(sessionId).state;
-    const rows = [["type", "time", "channel", "severity", "text", "acknowledged_at"]];
+    const rows = [["type", "time", "mode", "channel", "severity", "text", "acknowledged_at"]];
     const channelNames = new Map(state.channels.map((channel) => [channel.id, channel.name]));
 
     for (const segment of state.transcriptSegments.filter((item) => item.isFinal)) {
       rows.push([
         "transcript",
         segment.createdAt,
+        segment.mode,
         channelNames.get(segment.channelId) || segment.channelId,
         "",
         segment.text,
@@ -211,6 +221,7 @@ export class SessionStore {
       rows.push([
         "trigger",
         event.createdAt,
+        event.mode,
         channelNames.get(event.channelId) || event.channelId,
         event.severity,
         event.transcriptText,
@@ -258,6 +269,7 @@ export class SessionStore {
         severity: rule.severity,
         color: rule.color,
         channelId,
+        mode: segment.mode,
         segmentId: segment.id,
         transcriptText: segment.text.trim() || rollingText.slice(-280),
         createdAt: new Date().toISOString()
@@ -269,6 +281,7 @@ export class SessionStore {
 
   private createSegment(
     channelId: string,
+    mode: ProviderMode,
     tokens: TranscriptToken[],
     isFinal: boolean,
     result: ProviderResult
@@ -284,6 +297,7 @@ export class SessionStore {
     return {
       id: isFinal ? crypto.randomUUID() : `provisional-${channelId}`,
       channelId,
+      mode,
       text: renderTokens(tokens),
       isFinal,
       tokens,
@@ -316,6 +330,10 @@ export class SessionStore {
 
   private cloneState(state: SessionState): SessionState {
     return JSON.parse(JSON.stringify(state)) as SessionState;
+  }
+
+  private getChannelMode(session: SessionInternal, channelId: string): ProviderMode {
+    return session.state.channels.find((channel) => channel.id === channelId)?.mode || "soniox";
   }
 
   private deleteChannelScopedKeys(map: Map<string, unknown>, channelId: string): void {

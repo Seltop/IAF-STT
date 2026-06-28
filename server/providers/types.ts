@@ -1,4 +1,5 @@
 import type { TranscriptToken } from "../../shared/types.js";
+import type { ProviderMode, Severity } from "../../shared/types.js";
 
 export interface ProviderResult {
   tokens: TranscriptToken[];
@@ -24,7 +25,13 @@ export interface ProviderChannelCallbacks {
 export interface StartChannelOptions {
   channelId: string;
   channelName: string;
+  providerMode: ProviderMode;
   contextTerms?: string[];
+  keywords?: Array<{
+    phrase: string;
+    severity: Severity;
+    enabled: boolean;
+  }>;
 }
 
 export interface RealtimeProvider {
